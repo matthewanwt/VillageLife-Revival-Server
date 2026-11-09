@@ -1,0 +1,795 @@
+{
+  "scope": "Source-only Windows compatibility integration plus backend architecture alpha",
+  "includes_private_player_data": false,
+  "includes_original_game_files": false,
+  "files": {
+    ".env.example": {
+      "sha256": "5c85c1dffd704cb82cec364be6d6adbba86fa5a341a44a8ac48887f7a4bab260",
+      "bytes": 223
+    },
+    ".github/workflows/tests.yml": {
+      "sha256": "c15e3f71987aaf57358cbbea8a94a656999eb04489b753971b8bf2aafae5a4e6",
+      "bytes": 377
+    },
+    ".gitignore": {
+      "sha256": "bb395e02e5c4bafd5265b3bdf04b3197b6a15e1999899ba9bdaab95d8d1129db",
+      "bytes": 781
+    },
+    "MIGRATION_MANIFEST.json": {
+      "sha256": "0f9bc339942c13e59bbc10e75a3ad907186627b11c36f99048a866eea159691b",
+      "bytes": 377
+    },
+    "README.md": {
+      "sha256": "54f7e2f64f802ce2ebd6e5d014db1314a63a5defef7700710a26d8d5ff265de6",
+      "bytes": 6997
+    },
+    "docs/API.md": {
+      "sha256": "32faf2e96e950fcb5e1c210829262eb45bee7e1695f16a8d27b1c306b234f23c",
+      "bytes": 1588
+    },
+    "docs/ARCHITECTURE.md": {
+      "sha256": "630aae59feffe356f8c85b4b7b8995cee5e4f31d608dbc73efd15856964af71e",
+      "bytes": 4272
+    },
+    "docs/DELIVERY_STATUS.md": {
+      "sha256": "c64a3688c51d11b7c41934c1218fe57f1304ccc04158d4c532c191a651c18428",
+      "bytes": 2785
+    },
+    "docs/DEVELOPMENT_HANDOFF.md": {
+      "sha256": "d53a397924507815bd839bd2c16f67ddea0c7d6f5faf7daf96b67ac08a2f1b49",
+      "bytes": 2643
+    },
+    "docs/GAME_RULES.md": {
+      "sha256": "8042dd17c9abaf0a38704860e752abf8571a75cc69e60f15d4fdb958d2123fa8",
+      "bytes": 2647
+    },
+    "docs/ROADMAP.md": {
+      "sha256": "2118a8ff39f599a53da6a66ffebbbd8c20b762406385bb1a4cf486f86a493aba",
+      "bytes": 2685
+    },
+    "docs/SAVE_MIGRATION.md": {
+      "sha256": "12822750221511b5a37a9c599544747deec6ef572446c29d3e679d1bea6f6ed4",
+      "bytes": 3272
+    },
+    "docs/SECURITY.md": {
+      "sha256": "883d72cd260a8dbd11db242f8a26808485459cbdacf37fc21609da5037e269b4",
+      "bytes": 1464
+    },
+    "docs/SYSTEM_COVERAGE.md": {
+      "sha256": "7fbe42e00804fafed773130aab20f45eed8e10b403fb9d041189eb7e4d90ee65",
+      "bytes": 3593
+    },
+    "docs/legacy_function_inventory.csv": {
+      "sha256": "469b1f2ac3eea7e75ca74857e25fb5e11f15f2ce5b09a78db6d4820bd2b137ce",
+      "bytes": 7900
+    },
+    "legacy_reference/README.md": {
+      "sha256": "32415a351a23b3a8f34fe449f65dd062d2244ea6a9f9f16a79ea65fe7952f414",
+      "bytes": 900
+    },
+    "legacy_reference/backend/areas.py": {
+      "sha256": "00ea84fc959feeb2ac03b4f7ff3f58d0eb22979a18ad49ac957270f5bee98336",
+      "bytes": 4983
+    },
+    "legacy_reference/backend/buildings.py": {
+      "sha256": "9769d82d884a8f26e85cdb517f22d44854af8735c08b58754cbdf7f4506908a8",
+      "bytes": 9894
+    },
+    "legacy_reference/backend/charms.py": {
+      "sha256": "ee649b66e072cb4df90c8b063be246e45ec692081aac01c78ba4587e3d097398",
+      "bytes": 8709
+    },
+    "legacy_reference/backend/codec.py": {
+      "sha256": "24e9358ae63a1d33b64d74a2cb59b684d08eadf9171ac71faa1845cb84322811",
+      "bytes": 926
+    },
+    "legacy_reference/backend/collection.py": {
+      "sha256": "710ce72c8b6374f4d5f734f7bd331bc74efc8df1f68e30aec940d7d5b714bcf2",
+      "bytes": 6044
+    },
+    "legacy_reference/backend/community.py": {
+      "sha256": "ba04ec091b171fef77a83cc70ee2e54476d9baec0333d135dafce0536ae2edfb",
+      "bytes": 2552
+    },
+    "legacy_reference/backend/family.py": {
+      "sha256": "2449020abb5ac5a9de769a690545bcd99f6d466e8c76c2f66d93c1c619382aa8",
+      "bytes": 23989
+    },
+    "legacy_reference/backend/fortune.py": {
+      "sha256": "ec15224de6541f24cf7ba2bd2f865a46bf364ec34298e124003270af1d306e18",
+      "bytes": 3631
+    },
+    "legacy_reference/backend/fun.py": {
+      "sha256": "fdbed0f44231578a480a47b13ce9f0b14d7816c30c7b169f22a4675a0a527249",
+      "bytes": 6569
+    },
+    "legacy_reference/backend/habitats.py": {
+      "sha256": "8cb7d7bf787d80533f732198a1b2a1c2c686e0fb205f0e72bff963f5d7e0dc1f",
+      "bytes": 10169
+    },
+    "legacy_reference/backend/interactive.py": {
+      "sha256": "ea074c62c8c538589158abef986132601517878fdedf47d60d4fcb6f04a16c98",
+      "bytes": 6447
+    },
+    "legacy_reference/backend/learning.py": {
+      "sha256": "9268fb10dd4031f1a9564a6d9817d7fae21423066c76128505d96f2df458d99e",
+      "bytes": 5447
+    },
+    "legacy_reference/backend/marriage.py": {
+      "sha256": "eacf1b1d4d187a4b86919de4c84318c722d2a404cc53eea2af0cb1bc11652757",
+      "bytes": 13432
+    },
+    "legacy_reference/backend/native_identity.py": {
+      "sha256": "f1b0e1dbf4a2aaf8fc045a6ae0ec8f412cdba091c2f3ff63120064ec5920df78",
+      "bytes": 4506
+    },
+    "legacy_reference/backend/needs.py": {
+      "sha256": "bcbd081d69cf4a7a60b873af935b0f62c7a214a17bdbdcbd1ea73f30d9c726a1",
+      "bytes": 10650
+    },
+    "legacy_reference/backend/placement.py": {
+      "sha256": "33712008b9f5b96a84a9a983e374399ce52d696cf18a326f543a3bbe4fbc6ba4",
+      "bytes": 5320
+    },
+    "legacy_reference/backend/player_access.py": {
+      "sha256": "14bd976a05170875715da8f686c19665839b376c1bf71aca5609838dfaa40307",
+      "bytes": 1820
+    },
+    "legacy_reference/backend/prerequisites.py": {
+      "sha256": "9af440e842e9c6ad8c4c1f66bc68972a78c14eb763f0b32e868b873fa3c823db",
+      "bytes": 3063
+    },
+    "legacy_reference/backend/progression.py": {
+      "sha256": "1dbb7ce08149ee39a2dc0e36719436f03674d3e8c482b8a7efefea6f079d68bc",
+      "bytes": 8082
+    },
+    "legacy_reference/backend/quests.py": {
+      "sha256": "32239663c5d40e258f629f0df598cadd93903809107771f75fe649795c919e90",
+      "bytes": 3255
+    },
+    "legacy_reference/backend/relationships.py": {
+      "sha256": "40495670c063cfe7d827737cf3dc12769c510600857c8aa96670f6e8f4a36982",
+      "bytes": 14555
+    },
+    "legacy_reference/backend/server.py": {
+      "sha256": "e739d5f6ba89848c98c8e3d6c6bbb1c60dee8b5e5fa1891ec31fb77614921af8",
+      "bytes": 8947
+    },
+    "legacy_reference/backend/session.py": {
+      "sha256": "697ce7bf4d1712cb9a061a9cd009071bc5535c1ee46f3c408ad3926ac2420123",
+      "bytes": 29642
+    },
+    "legacy_reference/backend/shop.py": {
+      "sha256": "a0aebe53a72f3becb2fdf467c9e026dbab7554fb6d5eeca2f6ded307c33af7bc",
+      "bytes": 5630
+    },
+    "legacy_reference/backend/social.py": {
+      "sha256": "0084d0b01af2123910a040ff775387d258b0e7dd7b6341fb92e30a5fd5aa6b13",
+      "bytes": 4060
+    },
+    "legacy_reference/backend/starter_tools.py": {
+      "sha256": "320d2add462e5c8b708720594704dd426b03db75e12ccdb8f63410ac46493553",
+      "bytes": 1893
+    },
+    "legacy_reference/backend/tasks.py": {
+      "sha256": "f5a564fd51c25461dc58b765de00a45f04f28a2dbbb0e93f87117edeebabecc9",
+      "bytes": 12724
+    },
+    "legacy_reference/backend/world.py": {
+      "sha256": "239fca5e03f70056d700eb659117b76a2e91764636c65283c640717cb4f25475",
+      "bytes": 19243
+    },
+    "legacy_reference/tests/test_all_building_items.py": {
+      "sha256": "414071c85fb08c1b4c59d1848f0e754a8120428efc858fd36e3cd1206731e29f",
+      "bytes": 11448
+    },
+    "legacy_reference/tests/test_areas.py": {
+      "sha256": "6ef7b00baaa525b8e7ccce8bb7e896271295267571feb7b7c468971a29901477",
+      "bytes": 5194
+    },
+    "legacy_reference/tests/test_charms.py": {
+      "sha256": "a2f4d6a6672866f02cf3f6712ec67effa292f8fbc4453305d3e8d9b9ae41faa9",
+      "bytes": 3902
+    },
+    "legacy_reference/tests/test_child_wishes.py": {
+      "sha256": "dd1bc26ad0d9d2fa03b965d54c97e010f1e51f90d712bab54c86d2c101f24091",
+      "bytes": 8679
+    },
+    "legacy_reference/tests/test_codec.py": {
+      "sha256": "399a424a375781b2672724895fbf2781a5db99934ccaad98d71e169a61faf8da",
+      "bytes": 690
+    },
+    "legacy_reference/tests/test_collection.py": {
+      "sha256": "55176a454cd49cf9f2f69eeaba5ca1080ecb4eca5060928394f9e59cc86f3b46",
+      "bytes": 3296
+    },
+    "legacy_reference/tests/test_community.py": {
+      "sha256": "e1ce96f41048af9970e735ca4c17eb761bd42d08dfe35754882aab6c507dc0b3",
+      "bytes": 1665
+    },
+    "legacy_reference/tests/test_community_family_fixes.py": {
+      "sha256": "6ca2f0272abf7879cf1918bc5356340bcce9e19e6ff62bd11e51eb774314b50e",
+      "bytes": 8232
+    },
+    "legacy_reference/tests/test_community_round.py": {
+      "sha256": "bbe4d8a27fe9b476882e37977b606a37337a771d5d40f40016e7181874c1bb52",
+      "bytes": 7839
+    },
+    "legacy_reference/tests/test_construction_journeys.py": {
+      "sha256": "c9ac058ccb99a36cb6597c4edeefdeea77e8f825cc0f601ea899b646e7e141ea",
+      "bytes": 8705
+    },
+    "legacy_reference/tests/test_core_systems.py": {
+      "sha256": "21a3d88a3511aa1f3ca265bc37b82cb52e5a883b0b36634031dde3775d746a69",
+      "bytes": 11512
+    },
+    "legacy_reference/tests/test_direct_consume.py": {
+      "sha256": "38de4ae482b6c05c65d6eda0e6b8833dccf601b833aaca8145bb36831f207dbd",
+      "bytes": 2771
+    },
+    "legacy_reference/tests/test_family.py": {
+      "sha256": "a4afd8ef57452cdd6153ed36e231a0c874dcabf255f8847c7d7ab343753a7c1c",
+      "bytes": 14290
+    },
+    "legacy_reference/tests/test_farming.py": {
+      "sha256": "987c7f7b016b50d76ae3c3a8396522c81b270688ebee3ac845b96d2bd8d05224",
+      "bytes": 7325
+    },
+    "legacy_reference/tests/test_fortune.py": {
+      "sha256": "ea6f038923204fb09c1b9fee32a505476f1131dbfbd43bfae515bb74852ab20f",
+      "bytes": 4466
+    },
+    "legacy_reference/tests/test_fun_and_finish.py": {
+      "sha256": "7acfe3c71939c14786b78f2ccb7b4cb7cced8ec933623db4efd2e68280948ccb",
+      "bytes": 9173
+    },
+    "legacy_reference/tests/test_fun_matrix.py": {
+      "sha256": "09881aea99be25e8296c2737f846aea6c9debb212fb59854574b9564270110c9",
+      "bytes": 9612
+    },
+    "legacy_reference/tests/test_habitats.py": {
+      "sha256": "1fe5fbaf60b144354ef6c5a3c62e60d63d00c9953be1e2bc1e48fc0548b8e515",
+      "bytes": 13355
+    },
+    "legacy_reference/tests/test_heartbeat.py": {
+      "sha256": "7fb3704adf25aa03a2c8e2f28c05f55cd82a82b57898219f5cfe7e7e4804d19f",
+      "bytes": 1623
+    },
+    "legacy_reference/tests/test_hosted_isolation.py": {
+      "sha256": "f783f3786ae184e7180d68ed2c6956d6ba6fb33201000a99be5eaaf179bfe3ca",
+      "bytes": 1440
+    },
+    "legacy_reference/tests/test_interactive.py": {
+      "sha256": "69536a065474d7eff8c5298247806eeab524f88df3abc1b041ea3448eac6e504",
+      "bytes": 3270
+    },
+    "legacy_reference/tests/test_learning.py": {
+      "sha256": "4f4a3a91ddb8e209781c4e2ab00a486070f5a9e59c72b4a3c748d55a8977c519",
+      "bytes": 7258
+    },
+    "legacy_reference/tests/test_life_stage.py": {
+      "sha256": "809b8f7a897ce5b233eb135c344f3ef9efed5c6bcd96dcd4c79da6919bda7f12",
+      "bytes": 4046
+    },
+    "legacy_reference/tests/test_marriage.py": {
+      "sha256": "0a7c130898fef8ee2747195ded4df07e97ed920fc7efa563841237f7a4bd8216",
+      "bytes": 15715
+    },
+    "legacy_reference/tests/test_native_identity.py": {
+      "sha256": "ec97cb320be1fdfcb29b8ce608f4f03ddbabc3804ce70caaed584215035f6a6d",
+      "bytes": 11822
+    },
+    "legacy_reference/tests/test_placement.py": {
+      "sha256": "a0e93e707f68d5b0e701a7582392f8cc972371c50da5ea043ccd20024f530332",
+      "bytes": 5079
+    },
+    "legacy_reference/tests/test_placement_journeys.py": {
+      "sha256": "5f9c758ec42c72ff7d3c1cc821cbfdfd1553367d3a0f728af832801a4763ee84",
+      "bytes": 12435
+    },
+    "legacy_reference/tests/test_player_access.py": {
+      "sha256": "9d199863eca5a563395b4148c326f515134442c59d1a0a552cab77c7d24c6228",
+      "bytes": 4029
+    },
+    "legacy_reference/tests/test_progression_needs.py": {
+      "sha256": "5bec577916628d6c07cb34a84af80a3288f86f4d0d129e82edb1d0871586030b",
+      "bytes": 7135
+    },
+    "legacy_reference/tests/test_relationships.py": {
+      "sha256": "1a85e02c829d9555bcf583fcf8f815587bbf937b8bddd6996bfec96a14046ea0",
+      "bytes": 13788
+    },
+    "legacy_reference/tests/test_reported_building_paths.py": {
+      "sha256": "7ccf11ac396b64285ac3c910a05742437cb6d40bec56fd6bc5ddd729fab29952",
+      "bytes": 2768
+    },
+    "legacy_reference/tests/test_server_transport.py": {
+      "sha256": "3ef5ffe5aca856cbd0ce1b46923c480a146b85da585693948ca47efeb0ca8945",
+      "bytes": 1592
+    },
+    "legacy_reference/tests/test_session.py": {
+      "sha256": "cc4f0422e6af22e9a4a2746c63980151e15396770a74ab627da0ecf96bb20771",
+      "bytes": 7496
+    },
+    "legacy_reference/tests/test_shop_journeys.py": {
+      "sha256": "cbb8681b787732516d9f57ac7862da23c737c8cf3b1181f6d1c5fd9ad349ae99",
+      "bytes": 9654
+    },
+    "legacy_reference/tests/test_shop_matrix.py": {
+      "sha256": "d4199918e3b9103174532998f5073d6f9e0506824e10f29876d4247190bd3448",
+      "bytes": 2217
+    },
+    "legacy_reference/tests/test_social.py": {
+      "sha256": "9764f3b839bc20fddbe09dc1117906d00bac7ef50e3d3bd1d5406ee3a4e53764",
+      "bytes": 2983
+    },
+    "legacy_reference/tests/test_starter_tools.py": {
+      "sha256": "5f8dbb5da1d9553780b13dd5f879c32e04a94ce7e0116c8d5abe9285af06ae5a",
+      "bytes": 3866
+    },
+    "legacy_reference/tests/test_static_cache.py": {
+      "sha256": "1f5456d19bf689416d67bc9d37dd49bceeb429abea3f80ae958529cf722b4713",
+      "bytes": 1924
+    },
+    "legacy_reference/tests/test_tasks.py": {
+      "sha256": "5ca6b7aa2eab5a11ac8ffb1708b6339e620dc2a9e16b29f7a9e82ad131d1c634",
+      "bytes": 3539
+    },
+    "legacy_reference/tests/test_world.py": {
+      "sha256": "93eb60bad005539b57c879146a89c906c940ad11f45f5bf383051aecdee4376d",
+      "bytes": 9357
+    },
+    "pyproject.toml": {
+      "sha256": "a81b7b6a5ba1d7c0229837ca1ff75f9152bf00d3d401e0bf1a84ee4d440d2c64",
+      "bytes": 488
+    },
+    "src/villagelife/__init__.py": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "src/villagelife/__main__.py": {
+      "sha256": "bd045ddd5242d002f692dac452be9afba38deef5cde541a5fc074bfef5987b91",
+      "bytes": 79
+    },
+    "src/villagelife/catalog/__init__.py": {
+      "sha256": "de81d92f8b37e0d65001fd3fb9d9df221e978fbbb124faa6f6bed26615562fe6",
+      "bytes": 80
+    },
+    "src/villagelife/catalog/sqlite_catalog.py": {
+      "sha256": "4c4545f378f7afda65c816d281d0966681e4f70542059d16987e9976265d9ffa",
+      "bytes": 2501
+    },
+    "src/villagelife/cli.py": {
+      "sha256": "eb54729840a86b2b310a11053dd7408ee556ff78d4e7ef34fcaa510b92e7a2f8",
+      "bytes": 4057
+    },
+    "src/villagelife/core/__init__.py": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "src/villagelife/core/clock.py": {
+      "sha256": "9fb934c4a6836f878e0b9b8a66bd570ad9a02311275cff280a8a54226b7a4b3e",
+      "bytes": 483
+    },
+    "src/villagelife/core/errors.py": {
+      "sha256": "211f6ef38190dc6635b694823c9b9ec4b6882f2c5352ec74d781d5f72745692d",
+      "bytes": 864
+    },
+    "src/villagelife/core/identity.py": {
+      "sha256": "b72cde36ef204bfa0770cf71e04ac75df85e83f5fbc376232b3dd19d40a3db7d",
+      "bytes": 347
+    },
+    "src/villagelife/core/model.py": {
+      "sha256": "8519f19f099e007272abc1b80cb05459f86f618085dcb13f6d28a5d31c6ed202",
+      "bytes": 983
+    },
+    "src/villagelife/core/ports.py": {
+      "sha256": "e74989b3019257bb2f9c4a9eb143ba11e7845cdcb642f427086a86bf069a430c",
+      "bytes": 733
+    },
+    "src/villagelife/core/rules.py": {
+      "sha256": "ff43063a31a2df569280754cc9993eeb98213cc72012b1f017394e6dea05adf3",
+      "bytes": 1205
+    },
+    "src/villagelife/core/validation.py": {
+      "sha256": "1906f9378696bd576fde2bbfe8452a0475d8c36c01169578564cbb4526b8e232",
+      "bytes": 1489
+    },
+    "src/villagelife/persistence/__init__.py": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "src/villagelife/persistence/auth_store.py": {
+      "sha256": "9dd7073fb24047c569e8c8341ba7c8b63c829983ba240c69d3b1588b1b60853d",
+      "bytes": 2087
+    },
+    "src/villagelife/persistence/legacy_import.py": {
+      "sha256": "827e70aa19fb608cf6941d80dbac98d7f699505b220b64600af2ccfbd1780532",
+      "bytes": 4423
+    },
+    "src/villagelife/persistence/portable.py": {
+      "sha256": "bf492b62e04847a725222c916e1227127b8876a40d9463d905692aad6d9e1e8c",
+      "bytes": 3190
+    },
+    "src/villagelife/persistence/social_store.py": {
+      "sha256": "eaf2ed69b477bdaee849b13e0ca64f05e462e5958079e41704b3d277ed2b9045",
+      "bytes": 4012
+    },
+    "src/villagelife/persistence/sqlite_store.py": {
+      "sha256": "b2c554aba00ccd5cab605a7826450d12617f7230ad46addc573074382ac449b6",
+      "bytes": 9185
+    },
+    "src/villagelife/protocol/__init__.py": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "src/villagelife/protocol/legacy_adapter.py": {
+      "sha256": "9c295707682279c587721d2f89a384f0b031726a7cabb36e3ae301c2c28fa956",
+      "bytes": 914
+    },
+    "src/villagelife/protocol/legacy_codec.py": {
+      "sha256": "0692a74680dc3ee87c2e1ae12d6f2dada1b7ebc248e4eccbab14477503bd95d8",
+      "bytes": 1152
+    },
+    "src/villagelife/services/__init__.py": {
+      "sha256": "1bfce8c44fa14542c72ebfaed880c86824d700ede1763b3153cdf294f5335d0f",
+      "bytes": 78
+    },
+    "src/villagelife/services/areas.py": {
+      "sha256": "057f5cc6fd10ee6e8914c2c9f9bc5c25fd87800daba656a24a3be2e1c07fcbde",
+      "bytes": 1786
+    },
+    "src/villagelife/services/buildings.py": {
+      "sha256": "65a86d9d3e4689905fbf83e3a3f8003838d676b04cb68589099c8ea805494b59",
+      "bytes": 1471
+    },
+    "src/villagelife/services/dispatcher.py": {
+      "sha256": "75a93dfbe53f4f083a01b85f123b8a3e4aa08cf4dd182bfa7a24aa850623ddb0",
+      "bytes": 2626
+    },
+    "src/villagelife/services/families.py": {
+      "sha256": "e9a4a55ee95dcb5caff2a4f8fb22e926dac0857137dbacc0daa7c1ad13df359d",
+      "bytes": 1015
+    },
+    "src/villagelife/services/inventory.py": {
+      "sha256": "64564dcf561c418c3eed6c9f9fdbff72beefa15f1c935d9b7ae8a0d050274f36",
+      "bytes": 1092
+    },
+    "src/villagelife/services/jobs.py": {
+      "sha256": "3b85d6fdaa746ca897d76a910835439e3ae0758e8d4f5f8550aed2453fd64229",
+      "bytes": 4852
+    },
+    "src/villagelife/services/world.py": {
+      "sha256": "b40f04b3936307f8a579ac85a1eb4e243ceb4e304e1694b3574a39ef10a420b9",
+      "bytes": 1276
+    },
+    "src/villagelife/simulation/__init__.py": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "src/villagelife/simulation/runner.py": {
+      "sha256": "79c9df3347bf41b383c2cd24d8dc68aac025f5382aeac522989863729f73ad76",
+      "bytes": 903
+    },
+    "src/villagelife/transport/__init__.py": {
+      "sha256": "ac9bf18ad27fad85c0f275de582880a42e772b76e37e96c26fb6f1a22e31836d",
+      "bytes": 81
+    },
+    "src/villagelife/transport/http_api.py": {
+      "sha256": "321bfcd43faa06f12e8ac98b05f4ebd8ae394bcd6b3ad8839ba1b9f14c72aa52",
+      "bytes": 7597
+    },
+    "tests/test_http.py": {
+      "sha256": "7e978cb5f75a49335d0042160888c287e53e3520fb003d222eb1fec1238599bd",
+      "bytes": 2547
+    },
+    "tests/test_migration.py": {
+      "sha256": "9b78fda47a0ed1e0cc7ee2e06b2991770fdb954426f5138f6f8c717f63acf57e",
+      "bytes": 2852
+    },
+    "tests/test_persistence.py": {
+      "sha256": "770b119c00b5444fc35c1689c0abc89a80e1f2931aefdb180fefed8ee0c7ba71",
+      "bytes": 3267
+    },
+    "tests/test_protocol.py": {
+      "sha256": "eb9be62ae77f3e41dc8780098ac8e7c19f0332935c30fa5d22620c2971eda1ab",
+      "bytes": 956
+    },
+    "tests/test_services.py": {
+      "sha256": "516bd0e0cf15a8c2cb787ca256201e7e3f178c943edbc20c15cd9abc9b33feef",
+      "bytes": 2229
+    },
+    "tests/test_social.py": {
+      "sha256": "93aaaf6bf63729fb4756be684bb5b761ce4c699c5df2e706f2a09ee6da309337",
+      "bytes": 1102
+    },
+    "tests/test_world_catalog.py": {
+      "sha256": "7bab8f895ec5946a36a28b2116cdb2e431c9adebe81358b3c3bd27038b27d113",
+      "bytes": 1794
+    },
+    "tools/audit_legacy_source.py": {
+      "sha256": "23ef2a38c43c5793a0c89ec1110dbdb9a77e40224fac5bd2e762eb8ba71e44b3",
+      "bytes": 1090
+    },
+    "tools/precommit_audit.py": {
+      "sha256": "3ba3db463e86dff33cb6c6a6d3ec9a71fce87b8c79e9997232daced65ef2da99",
+      "bytes": 1748
+    },
+    "windows/COMPATIBILITY_MANIFEST.json": {
+      "sha256": "644e99df15ef7582ae859f3fb2e64b712a6d8310d51d024df913503c1e30d101",
+      "bytes": 696
+    },
+    "windows/README.md": {
+      "sha256": "97946b1142fd74339c7931c9766148f2f9b0e6c9e0f0fd16f40d7aca65def55c",
+      "bytes": 5982
+    },
+    "windows/docs/INSTALLER.md": {
+      "sha256": "76fc94338dd97903e9a4e91e2619ebaf1c9a8974509db89b89e5557997f1a472",
+      "bytes": 3108
+    },
+    "windows/docs/WIFI_AND_ROUTING.md": {
+      "sha256": "d556839235f99db2ea51e6e63e96f54ccf4fc22f89ab4d5f55dcd7bf9f7d228b",
+      "bytes": 3647
+    },
+    "windows/installer/Build-Installer.ps1": {
+      "sha256": "ad732be103e5758d71f8920a82584e56177e187d881b09f1c0fe1f8a1b73774a",
+      "bytes": 2379
+    },
+    "windows/installer/VillageLife.iss": {
+      "sha256": "aa3dcff416661c20559f2156ec2c8e251b220be09e8670ca4976c438b54e2665",
+      "bytes": 2333
+    },
+    "windows/launcher/LocalApkSigner.cs": {
+      "sha256": "3f634a2a8a1717f3c2129d9422f910f5190a9fba32ba1e7dc73ddb18ba3f3d6f",
+      "bytes": 5480
+    },
+    "windows/launcher/NuGet.Config": {
+      "sha256": "e497501960554d323eef45860c14474958accd1ae7f3ae6f95b10e4c1d340401",
+      "bytes": 73
+    },
+    "windows/launcher/Program.cs": {
+      "sha256": "4a866f77395fa3b05d85e4003e65e313f24b8cf1da4f4c780bf4b6be713963ff",
+      "bytes": 13454
+    },
+    "windows/launcher/VillageLifeLauncher.csproj": {
+      "sha256": "5479954ff93e02d181faf2d910225af4b23721d5f8a283dbcc5c89692dafeb22",
+      "bytes": 363
+    },
+    "windows/launcher/app.manifest": {
+      "sha256": "531e76da0dd516a4ed03884b14981e4e0f3ab29df9fac24ec3b9f4df9850f05d",
+      "bytes": 312
+    },
+    "windows/launcher/launcher.json": {
+      "sha256": "b928a5eed3f97c16625d49a101fc6d761aa9d887dd02b88c9deb8c8ab20bdfde",
+      "bytes": 44
+    },
+    "windows/tests/test_audit_dashboard.py": {
+      "sha256": "20b3a09e6327f95a50a41575e173ee819d191262aa754e54e3d368fd1e3626df",
+      "bytes": 2674
+    },
+    "windows/tests/test_bluestacks_adapter.py": {
+      "sha256": "b218a40642bc4d23055f52321aee1ed049d5e4aaab9b89d6b0996cb477a5ba2e",
+      "bytes": 6220
+    },
+    "windows/tests/test_diagnose_setup.py": {
+      "sha256": "e746f58d10b265fb237b00513d4d67066ba30989251e6acd4dd64bd33d614bd6",
+      "bytes": 712
+    },
+    "windows/tests/test_feature_audit.py": {
+      "sha256": "98b4267506b4d9142967bdbfd79e77cec0b19ffa614d9809ffe07c9ac0f74fe7",
+      "bytes": 1742
+    },
+    "windows/tests/test_hosted_connection.py": {
+      "sha256": "51bf5e37cab29a399b62da4ac12ba69d0811c6d4429f4a3461991d1b9a5ca7a9",
+      "bytes": 838
+    },
+    "windows/tests/test_import_game.py": {
+      "sha256": "d0cec4ba13f2050846b3e1c1c1244faf3bdd63aa06d7625e37612295b39ce947",
+      "bytes": 2160
+    },
+    "windows/tests/test_network_check.py": {
+      "sha256": "066749929c57f3a3e0fb0dd3fd4eb7a49dd2f52de63a2c5e41274776ed777756",
+      "bytes": 3420
+    },
+    "windows/tests/test_online_relay.py": {
+      "sha256": "5a08fa8ed33edf4685fbc3132c470ae6432a17eae5fd3d000a7c4bc3d6c0b48d",
+      "bytes": 1743
+    },
+    "windows/tests/test_prepare_host.py": {
+      "sha256": "e2c8c6830e3d67e2b61ceffb540852aa1cb7a6ceee3e7a365885ff2458808f3c",
+      "bytes": 1910
+    },
+    "windows/tests/test_setup_local.py": {
+      "sha256": "9e850f5a79baca85ce1970e5de50280caeee2f1c2da29620abb9fed25b87cc57",
+      "bytes": 2234
+    },
+    "windows/tests/test_test_villages.py": {
+      "sha256": "74a01b13d292e131be9623706b8d3956efc456b7076447b0d4633557defb43a4",
+      "bytes": 4241
+    },
+    "windows/tests/test_update_local.py": {
+      "sha256": "b2875105e1c5cf83592371a43575ae28b6bed74272c7faeb9e2a28c6c8067386",
+      "bytes": 10151
+    },
+    "windows/tools/audit_dashboard.py": {
+      "sha256": "8e3aacb31deacc4d83ebfe05cba8b87a678cc272db8f7705b068fb292c3edeab",
+      "bytes": 6305
+    },
+    "windows/tools/build_community_package.py": {
+      "sha256": "6fd6cd8f0ee6145318472decfdcada2401cd0c940335b491d228b4095b9d640c",
+      "bytes": 12323
+    },
+    "windows/tools/build_private_package.py": {
+      "sha256": "e420446b086d62f35cd35bddec2f5738a23dc904683d006884122546bb466801",
+      "bytes": 8173
+    },
+    "windows/tools/building_item_coverage.py": {
+      "sha256": "265fd513bd8f53f85c56136e9d64e8f4c798efd7c7bd7336c9ce12a3a6d813af",
+      "bytes": 3895
+    },
+    "windows/tools/decode_spk1_xml.py": {
+      "sha256": "5037e83faa69eb1a45a637667c4a26c2cefc25a1ff6ebce1ba6f7247c7b50adf",
+      "bytes": 3298
+    },
+    "windows/tools/diagnose_setup.py": {
+      "sha256": "984dccd9117e28399e339f3905fc8c190f3fba945d916f1eb127e3dfbc4736af",
+      "bytes": 3516
+    },
+    "windows/tools/export_diagnostics.py": {
+      "sha256": "58c6594003e0b7fbf0a47ae526512f223c81b161a796fcf1c0634d413f04fbe4",
+      "bytes": 5388
+    },
+    "windows/tools/feature_audit.py": {
+      "sha256": "da83cd35d85e1a4ce4e9e13c4616999851a0b9ac95357e0c666795ecce169ae4",
+      "bytes": 26003
+    },
+    "windows/tools/hosted_connection.py": {
+      "sha256": "1360ae6073ef399065a9d87e74998ec0a9f10fd2953287d5dfca10104a7d2101",
+      "bytes": 1139
+    },
+    "windows/tools/import_game.py": {
+      "sha256": "bedd9692658d50bb3b534d90aace5b75c058b4789586d1552a518d5c4c1d70d2",
+      "bytes": 11718
+    },
+    "windows/tools/index_game_tables.py": {
+      "sha256": "4b0b306cc5bd67fac8005b1453f7d7aff11345fad3444e043168203797b8f7a3",
+      "bytes": 2833
+    },
+    "windows/tools/index_server_contracts.py": {
+      "sha256": "206f4b5131ca7d09c7e7345466494ee1efac5abe54bab67896a6f530a647d372",
+      "bytes": 4256
+    },
+    "windows/tools/inspect_xapk.py": {
+      "sha256": "7617f870d00517f46f5670cf1bf7c7906e87b3b6ecda989aec01dee4e70c289c",
+      "bytes": 11431
+    },
+    "windows/tools/make_test_village.py": {
+      "sha256": "7d5027dccbe32aed0dacaa944fe8bb853dc2644bafd8f4032843adf70f297cfd",
+      "bytes": 8832
+    },
+    "windows/tools/manage_friends.py": {
+      "sha256": "00b2a6fcaaa4b95a0e66f82134525f16c5e5ed33f3ff4a1132710374cbacbb0e",
+      "bytes": 999
+    },
+    "windows/tools/manage_host.py": {
+      "sha256": "5e52384692daf0d8e02d4d8bc65af9e9964cc6ed199360969314d6343fbe1c2c",
+      "bytes": 1118
+    },
+    "windows/tools/migrate_save.py": {
+      "sha256": "76c9892cafe77408bd744eb1366752d6ed759841c253d02a282757370541419b",
+      "bytes": 6869
+    },
+    "windows/tools/network_check.py": {
+      "sha256": "8b752658b6d786c815b84169628e09242205dcd6c0c821e565d5293729250ba3",
+      "bytes": 4069
+    },
+    "windows/tools/online_relay.py": {
+      "sha256": "23590e2a9b042fde80bb2c01a54c82de3bb81440e2d6afe50e41012e9062bdb4",
+      "bytes": 3161
+    },
+    "windows/tools/organize_releases.py": {
+      "sha256": "b8026cb2bd85efd38de4e9060c7fd21a28fff509f0348f1080a11fa458f0f0c0",
+      "bytes": 3327
+    },
+    "windows/tools/platforms/__init__.py": {
+      "sha256": "b3bc496594712d63c273d500c2c10d33cd437742a8c3c1603be7acb0beb88882",
+      "bytes": 80
+    },
+    "windows/tools/platforms/bluestacks/__init__.py": {
+      "sha256": "5453cffcf222c9177e5cf493bc9d889754354d984e4eb621cc89790cdda72fb5",
+      "bytes": 69
+    },
+    "windows/tools/platforms/bluestacks/adb.py": {
+      "sha256": "9ddd3c0c28d72f13e06b7ce13d3f7d8667989c2bfd8263b1b0e9ec18a57ace23",
+      "bytes": 3894
+    },
+    "windows/tools/platforms/bluestacks/discovery.py": {
+      "sha256": "d1c125751b9e790e3f2d99952b70cc4ccfba43a6825be0bc13c807c9ece6aeed",
+      "bytes": 2941
+    },
+    "windows/tools/platforms/bluestacks/instances.py": {
+      "sha256": "4bd350af94d5e1b2142ddaa666153b34081cdbbfea6cf1bc1123344864c5ccfe",
+      "bytes": 3801
+    },
+    "windows/tools/platforms/bluestacks/net_assurance.py": {
+      "sha256": "38c08ca4d3bb2b5551b0a0f5712756215dfdb5d905d967f56b15dc0c7b9379ce",
+      "bytes": 1973
+    },
+    "windows/tools/platforms/bluestacks/ports.py": {
+      "sha256": "148ac5c412ab6a39c9e9a236784a5a2b06b736a9d6f6ea591bf137b469b8b0bc",
+      "bytes": 1404
+    },
+    "windows/tools/play_local.py": {
+      "sha256": "d6f12af1422ae25fee54dccad480944bc6bdf23aafb59797b966f7a1ab3d5a64",
+      "bytes": 11941
+    },
+    "windows/tools/prepare_host.py": {
+      "sha256": "b904185a16ea55283c7ba244417dd6ad28213254e3154a939e1d440fc621fdae",
+      "bytes": 1594
+    },
+    "windows/tools/prepare_normal_world_seed.py": {
+      "sha256": "90eab603e9d215524233580d04b3b94491771ec9877693ccff4d97636e39829c",
+      "bytes": 2195
+    },
+    "windows/tools/release_review.py": {
+      "sha256": "682bdbeb778e052c8c21c3889a276c45d56f5f810357ec26f9800cd36907dde0",
+      "bytes": 6600
+    },
+    "windows/tools/restoration_tracker.py": {
+      "sha256": "2d2c5b6a528fe726614f4835ca1d9ab22dff095059edc396055af4a5f8b253f1",
+      "bytes": 7319
+    },
+    "windows/tools/run_offline_probe.py": {
+      "sha256": "74290adbcadc2e0b67942e631892ac6284b6b5fca28cde1d1a5e551a67e5b691",
+      "bytes": 6270
+    },
+    "windows/tools/runtime_errors.py": {
+      "sha256": "f34b66879ada136a970d8bf97af56b1cddd69aff97dba0713faeda69171a9b0d",
+      "bytes": 2076
+    },
+    "windows/tools/setup_local.py": {
+      "sha256": "1b26c2a469233a26d7a81d961902daba094d219c321ae9b8fd8573cd366ec213",
+      "bytes": 7769
+    },
+    "windows/tools/stage_one_coverage.py": {
+      "sha256": "15d27d4e31a1bf22ea16ba05d111acd3ed666bd1edce0b364b80363aaecb235a",
+      "bytes": 10246
+    },
+    "windows/tools/stage_three_coverage.py": {
+      "sha256": "4646fdfbda48a259c4832191975b44a2198b2103519a0ff99aff135a91eef38b",
+      "bytes": 4502
+    },
+    "windows/tools/stage_two_coverage.py": {
+      "sha256": "24a3d17802f0eb4144efb307d4b973a274fd2b8cf7afda820a684eedf00fa7aa",
+      "bytes": 4666
+    },
+    "windows/tools/trace_arm_protocol.py": {
+      "sha256": "2fa3c59efc833a99e5c32a6db5085b1835c530d3c318f2dffae366b70c141912",
+      "bytes": 6760
+    },
+    "windows/tools/trace_want_callers.py": {
+      "sha256": "221cc116b3230f273ada5c432026497d7eb044a450c752dad7c0b3ed0a092ef3",
+      "bytes": 747
+    },
+    "windows/tools/trace_world_startup.py": {
+      "sha256": "78c964e230dc2919c21d0622dd85e46a1e198e3179232265891fcfcae67cbc7d",
+      "bytes": 785
+    },
+    "windows/tools/update_local.py": {
+      "sha256": "eac0ebe4ce97b899d1ceaeeb439ccfc7eb93f94679cdc0536ceb7ff910efa13f",
+      "bytes": 16083
+    },
+    "windows/tools/verify_community_package.py": {
+      "sha256": "99c6bc30f0d486df99f253c3b3348b40e0ac3d38c0fcc13c02b7404fecb95410",
+      "bytes": 5406
+    },
+    "windows/tools/verify_jar_digests.py": {
+      "sha256": "a0e8a4805c36f3439da67127a165fe7e114e076c8dc1bef05278de3beaf81db1",
+      "bytes": 1091
+    },
+    "windows/tools/verify_update_candidate.py": {
+      "sha256": "1744bd4f5e4228431f3c6f53c964d1e43da25783929265d391c3bd425ce5e01e",
+      "bytes": 6408
+    }
+  }
+}

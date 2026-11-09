@@ -1,12 +1,12 @@
 # Village Life Revival Server — architecture redesign (alpha)
 
 A **new, modular Python backend** for the community preservation project, based on the
-user-provided Village Life backend v0.2.6. The original playable backend **has not
+user-provided Village Life backend (reported by the project owner as v2.11). The original playable backend **has not
 been modified**. Its 28 source modules and 40 original test files are retained under
 `legacy_reference/`, *without* private state, compiled outputs, the APK/XAPK or assets.
 
 > **Important:** This is an **architecture and migration foundation**, **not yet a
-> drop-in replacement for the playable 0.2.6 server**. The original game's RPCs,
+> drop-in replacement for the playable 2.11 server**. The original game's RPCs,
 > economy rules, world generation, buildings, family logic and much of multiplayer
 > still need to be ported and validated. Unknown behaviour explicitly fails rather
 > than silently inventing rewards, family members or scenarios.
@@ -17,7 +17,7 @@ been modified**. Its 28 source modules and 40 original test files are retained u
 - New SQLite repository using transactions, per-village revisions and idempotency receipts.
 - Separate account and village identity; revocable, hashed API tokens for the new API.
 - **Copy-only** legacy profile/save migration that preserves all unknown fields verbatim
-  in a tagged `legacy.v0_2_6` payload, plus dry-run, checksums and conflict detection.
+  in a tagged `legacy.v0_2_6 (historical internal label; the uploaded source was v2.11)` payload, plus dry-run, checksums and conflict detection.
 - Portable save export/import with SHA-256 integrity checks; imports create a **new** village.
 - Deterministic timed-job readiness and offline catch-up, with **no unverified reward grants**.
 - Consent-based new-API friendship persistence (not yet exposed to the original APK).
@@ -130,3 +130,7 @@ See [`docs/DELIVERY_STATUS.md`](docs/DELIVERY_STATUS.md) for test results and
 limitations. The new source includes `catalog/` read-only original-table access,
 world-object identity and exact inventory helper services in addition to the
 core modules listed above.
+
+## Windows launcher, BlueStacks and EXE installer (separate integration)
+
+The `windows/` directory contains a **source-only Windows compatibility update** prepared from the uploaded 2.11 tools, a dedicated `tools/platforms/bluestacks/` adapter, a WinForms launcher with support-bundle export, synthetic regression tests, and an Inno Setup project. It does **not** replace the redesigned backend with the legacy server and is **not yet a verified installer EXE**. See [`windows/README.md`](windows/README.md).

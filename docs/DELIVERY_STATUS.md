@@ -30,7 +30,7 @@ friend acceptance, resource catalog reads and world/inventory invariants.
 This does **not** mean the old game is playable through the new API. Actual
 BlueStacks/APK integration and legacy test suite were **not run**.
 
-## Still missing before replacing original 0.2.6
+## Still missing before replacing original 2.11
 
 - Original APK HTTP routes, login/process data and asset serving parity.
 - Original save schema conversion and account/device linking.
@@ -42,3 +42,10 @@ BlueStacks/APK integration and legacy test suite were **not run**.
 
 The old 55 GB folder should remain preserved and operational until these gates
 pass. Do not migrate original game clients to this alpha API yet.
+
+## Windows compatibility addition (same date)
+
+- `windows/` contains the 2.11-sourced BlueStacks launcher compatibility **source**, its C# GUI changes, 10 synthetic integration tests, and Inno Setup source.
+- Original new-core suite: **14/14 passed**. New BlueStacks/diagnostics suite: **10/10 passed**. Legacy-tool focused setup/network/diagnostic/hosting/relay tests: **20/20 passed**.
+- An additional 2.11 tool-suite run cannot complete without the original generated game-tables SQLite database; do **not** interpret that as parity coverage.
+- No Windows, BlueStacks, real APK or Inno Setup compiler execution was available. The installer EXE and Wi-Fi-on isolation are **not yet validated**.

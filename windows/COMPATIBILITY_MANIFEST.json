@@ -1,0 +1,18 @@
+{
+  "source_release_claimed_by_owner": "2.11",
+  "source_archive": "tools.zip plus uploaded backend.zip as retained legacy reference",
+  "current_backend": "Alpha architecture; not original APK compatible",
+  "windows_launcher_status": "candidate source, not compiled Windows installer",
+  "synthetic_new_tests_passed": 10,
+  "new_backend_tests_passed": 14,
+  "focused_legacy_tool_tests_passed": 20,
+  "wifi_on_policy_verified": false,
+  "bluestacks_real_tested": false,
+  "backend_legacy_parity": false,
+  "notes": [
+    "Port 80 is fixed in current APK patch",
+    "Only one save snapshot per new launch",
+    "Original 55GB folder not modified",
+    "All original player saves excluded"
+  ]
+}
