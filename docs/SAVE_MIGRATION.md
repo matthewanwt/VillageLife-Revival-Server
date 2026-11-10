@@ -1,68 +1,32 @@
-# Non-destructive save migration
+# Legacy save import into the NEW backend
 
-## What the uploaded 0.2.6 source actually uses
+This tool reads the **old file format**; it does not run or import any old server Python modules. It is designed to accept profile files named as 64-hex `.json` and their matching `.tutorial.json` saves from the historical `backend/private_state/` directory. The importer treats the payload as opaque because precise 2.11 gameplay field semantics have not all been proven.
 
-`legacy_reference/backend/session.py` stores a hashed-device profile as
-`backend/private_state/<sha256>.json`; gameplay data is stored in the paired
-`<sha256>.tutorial.json`. Legacy social and invitation data are separate.
-Original files may contain player information and are not included in this repo.
+## Safest workflow
 
-## Stage A: Verified copy-only ingestion — implemented
+1. Close the old game/server. Back up your original save directory; **never import the live, actively changing files**.
+2. Copy the backed-up `private_state` folder to a temporary location outside Git.
+3. Run a dry run against the new empty database:
 
-`LegacySaveImporter` searches for these pairs, parses JSON, stores an SHA-256
-of both original byte streams, and creates:
+   ```powershell
+   .\.venv\Scripts\python.exe -m villagelife import-legacy "C:\VL-TestCopies\private_state"
+   ```
 
-- a new stable account ID and a new village ID;
-- one record tagged `legacy.v0_2_6` containing the original profile and save;
-- a legacy-key mapping and content digests to prevent unintended duplicate
-  imports or overwriting changed source files.
+4. Check that every player you expect has a profile and a matching save (`has_save: true`). Missing saves are reported, not invented. If expected entries are absent, stop and inspect your backup.
+5. Create a second backup of your new database (if it contains anything you want to keep), then import a copy:
 
-All unknown keys, entity IDs, relationships and future version fields are kept.
-History JSONL and invitation/access credentials are **not** imported yet.
-This is a **preservation import**, not conversion into native game logic.
+   ```powershell
+   .\.venv\Scripts\python.exe -m villagelife import-legacy "C:\VL-TestCopies\private_state" --apply
+   ```
 
-The CLI uses **dry run by default**. `--apply` copies data into the new database
-and NEVER alters the original saves or changes the 55 GB folder.
+6. Confirm that separate source IDs produced separate account/village IDs, that the reported counts match, and that repeat imports report `already-imported`. If the original source bytes change, the importer raises a conflict status rather than silently overwriting.
+7. Export/import a sample using `villagelife export` / `import-portable` into a **separate test account**. Check original object IDs, family trees, unknown fields, inventory and area fields remain structurally identical.
 
-## Stage B: Schema mapping — NOT implemented
+## What is NOT done
 
-Must validate old and new fields, including:
+- No game-state translation to native `native.v1`. Imported data is stored as `legacy.profile+tutorial.v1` and is **readable/exportable but not yet playable** through the new action dispatcher.
+- No cross-device auto-sync, conflict merging or account takeover mechanism.
+- No overwriting an existing save or silently switching a BlueStacks instance.
+- No storage of plain old device IDs in public diagnostics; the imported private payload does contain the old profile fields and must be protected.
 
-- account/user ID versus device/session ID;
-- stable villager and family IDs, relationships and parent/child references;
-- world entities across Woodland, Riverside and Mountain;
-- buildings, crafting, timed jobs, quests, inventories, unlocked areas;
-- exact original time units and derived countdowns;
-- resource ID catalog version and original scenario content hash;
-- online friendships, invitation codes and hosted player accounts.
-
-Run round-trip tests on anonymised synthetic examples, *then* real saves copied
-into private test storage. Implement an explicit `legacy.v0_2_6 → native.v1`
-conversion function with rollback evidence and a complete migration report.
-Until then, the engine rejects gameplay actions on opaque imported saves.
-
-## Portability and multi-device policy
-
-Portable archives include the tagged format, schema version, revision, state,
-and checksum. Import always creates a **new village ID**, never silently
-replaces the currently hosted village. This is intentional: the exact offline-
-versus-hosted save-sync policy and conflict rules are not yet agreed.
-
-An eventual sync engine must handle revision conflicts, server-owned event IDs,
-duplicate work collection, concurrent visits, mutually linked marriages and
-family relations. Never use 'last write wins' on shared game-state changes.
-
-## Safe commands
-
-```powershell
-python -m villagelife import-legacy "D:\Archive\backend\private_state"
-python -m villagelife import-legacy "D:\Archive\backend\private_state" --apply
-python -m villagelife list-villages ACCOUNT_ID
-python -m villagelife export VILLAGE_ID "D:\Backups\village.vl-save.zip"
-python -m villagelife import-portable NEW_OWNER_ACCOUNT_ID "D:\Backups\village.vl-save.zip"
-python -m villagelife backup-db "D:\Backups\worlds-before-upgrade.sqlite3"
-```
-
-Exported saves can contain private user data; back them up securely and don't
-commit them. Stop the old game or take a stable snapshot before importing so the
-source doesn't change midway.
+**For current 2.11 saves, test on copied, sanitised examples before any community migration.** The tests use fictional profiles and cannot certify the correctness of every original 2.11 field or all previously released formats.

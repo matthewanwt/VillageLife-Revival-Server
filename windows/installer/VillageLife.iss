@@ -1,53 +1,32 @@
-; Village Life per-user installer, assembled only from a validated build stage.
-; The original commercial APK/XAPK/OBB and player saves are NOT distributed.
-; Build: ISCC.exe /DStageDir="C:\path\to\release-stage" VillageLife.iss
+; NEW BACKEND ONLY - no 2.11 runtime or legacy server, no APK bundled.
 #ifndef StageDir
-  #error Supply /DStageDir="C:\absolute\release-stage" when compiling
+  #error Supply /DStageDir= when compiling
 #endif
-#define AppTitle "Village Life Revival (Development Test)"
-#define AppVersion "2.11-test-1"
+#define AppTitle "Village Life | New Backend Test Manager"
+#define AppVersion "0.2.0-alpha"
 [Setup]
-AppId=VillageLifeCommunityRevivalTest
+AppId=VillageLifeNextBackendManager
 AppName={#AppTitle}
 AppVersion={#AppVersion}
 AppPublisher=Village Life Community Project
-DefaultDirName={localappdata}\Programs\VillageLifeRevivalTest
-DefaultGroupName=Village Life Revival Test
+DefaultDirName={localappdata}\Programs\VillageLifeNextBackend
+DefaultGroupName=Village Life Backend Test
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=output
-OutputBaseFilename=VillageLife-TestSetup
+OutputBaseFilename=VillageLife-NextBackend-TestSetup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-UninstallDisplayName={#AppTitle}
-CloseApplications=no
-RestartApplications=no
-ChangesAssociations=no
 UsePreviousAppDir=yes
-
+CloseApplications=no
 [Files]
-; Source tree must be reviewed and privacy-scanned before invoking ISCC.
-Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.xapk,*.apk,*.obb,*.sqlite,*.db,*.pfx,*.p12,*.private,play-settings.json,setup-network-check.json,latest-runtime-error.json,private_state\*,backups\*,experiments\*,support\*,analysis\private\*"
-
+Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.xapk,*.apk,*.obb,*.sqlite,*.sqlite3,*.db,*.pfx,*.p12,play-settings.json,bluestacks-binding.json,legacy_reference\*,private_state\*,backups\*"
 [Icons]
-Name: "{autoprograms}\Village Life Revival (Test)"; Filename: "{app}\StartVillageLife\VillageLifeLauncher.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\Village Life Revival (Test)"; Filename: "{app}\StartVillageLife\VillageLifeLauncher.exe"; WorkingDir: "{app}"; Tasks: desktopicon
-
-[Tasks]
-Name: desktopicon; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
-
+Name: "{autoprograms}\Village Life New Backend Test"; Filename: "{app}\StartVillageLife\VillageLifeLauncher.exe"; WorkingDir: "{app}"
 [Run]
-Filename: "{app}\StartVillageLife\VillageLifeLauncher.exe"; Description: "Open Village Life Revival"; Flags: postinstall nowait skipifsilent
-
-; Players supply their own supported XAPK through Set Up Game.
-; The dedicated BlueStacks 5 Pie64 instance is not installed or modified by Inno Setup.
-; No automatic firewall or VM network changes are made during installation.
-; The app writes saves in its per-user install folder in this interim version.
-; Production should migrate saves to a stable separate data location before major upgrades.
-
-; This is a DEVELOPMENT-ONLY installer. It is deliberately isolated from
-; historical v2.11 installations and must not be publicly distributed before
-; Windows/BlueStacks isolation, save persistence and installation tests pass.
+Filename: "{app}\StartVillageLife\VillageLifeLauncher.exe"; Description: "Open new-backend test manager"; Flags: postinstall nowait skipifsilent
+; Saves live in %LOCALAPPDATA%\VillageLifeRevivalNext and are not uninstalled.
+; Separate from historical 2.11 installation. No BlueStacks/Windows firewall changes.

@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,9 +14,10 @@ class WorldCatalogTests(unittest.TestCase):
     def test_catalog_is_read_only_and_validated(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'fake_game_tables.sqlite'
-            with sqlite3.connect(path) as db:
+            with closing(sqlite3.connect(path)) as db:
                 db.execute('CREATE TABLE area(id INTEGER PRIMARY KEY, name TEXT)')
                 db.execute("INSERT INTO area VALUES (1, 'Woodland')")
+                db.commit()
             catalog = OriginalGameCatalog(path)
             self.assertEqual(catalog.row_by_id('area', 1)['name'], 'Woodland')
             self.assertEqual(catalog.rows('area')[0]['id'], 1)

@@ -4,7 +4,7 @@ One BEGIN IMMEDIATE transaction covers all game state and idempotency receipts.
 The database is stored OUTSIDE the Git repository, on a local filesystem.
 """
 from __future__ import annotations
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 from pathlib import Path
 from typing import Any, Callable, Iterator
 import hashlib
@@ -60,6 +60,11 @@ CREATE TABLE IF NOT EXISTS friendships (
   created_at INTEGER NOT NULL,
   PRIMARY KEY(left_account, right_account),
   CHECK(left_account < right_account)
+);
+CREATE TABLE IF NOT EXISTS missing_requests (
+  method TEXT NOT NULL, endpoint_shape TEXT NOT NULL, response_status INTEGER NOT NULL,
+  count INTEGER NOT NULL, last_seen INTEGER NOT NULL,
+  PRIMARY KEY(method, endpoint_shape, response_status)
 );
 CREATE TABLE IF NOT EXISTS metadata (
   key TEXT PRIMARY KEY, value TEXT NOT NULL
@@ -203,5 +208,14 @@ class SqliteSaveRepository:
         if target == self.path:
             raise ValueError('Backup path must differ from active database')
         target.parent.mkdir(parents=True, exist_ok=True)
-        with self.connect() as src, sqlite3.connect(target) as dst:
-            src.backup(dst)
+        already_existed = target.exists()
+        if already_existed:
+            raise FileExistsError(f'Backup already exists: {target}')
+        try:
+            with self.connect() as src, closing(sqlite3.connect(target)) as dst:
+                src.backup(dst)
+        except BaseException:
+            # A partial backup must never look like a successful new save.
+            if not already_existed:
+                target.unlink(missing_ok=True)
+            raise

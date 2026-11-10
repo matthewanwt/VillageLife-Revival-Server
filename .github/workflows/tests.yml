@@ -1,26 +1,36 @@
-name: Backend tests
+name: New backend and Windows compatibility
 on:
   push:
   pull_request:
 jobs:
-  unittest:
+  python_linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install
+      - name: Install NEW backend
         run: python -m pip install -e .
-      - name: Test new foundation only
+      - name: Run new backend and instance/save regression tests
         run: python -m unittest discover -s tests -v
-      - name: Test portable BlueStacks diagnostic and adapter logic
-        env:
-          PYTHONPATH: windows/tools
-        run: |
-          python -m unittest discover -s windows/tests -p 'test_network*.py' -v
-          python -m unittest discover -s windows/tests -p 'test_bluestacks_adapter.py' -v
-          python -m unittest discover -s windows/tests -p 'test_setup_local.py' -v
-          python -m unittest discover -s windows/tests -p 'test_diagnose_setup.py' -v
-          python -m unittest discover -s windows/tests -p 'test_instance_manager.py' -v
-          python -m unittest discover -s windows/tests -p 'test_missing_requests.py' -v
+      - name: Source-only release audit
+        run: python tools/release_audit.py
+  windows_source:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install NEW backend
+        run: python -m pip install -e .
+      - name: Windows SQLite file-handle and instance regression tests
+        run: python -m unittest discover -s tests -v
+      - name: Compile Windows test manager (no installer)
+        run: dotnet build windows/launcher/VillageLifeLauncher.csproj -c Release
+      - name: Prevent accidental original game or old backend bundling
+        run: python tools/release_audit.py

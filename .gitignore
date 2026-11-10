@@ -77,3 +77,10 @@ support/
 windows/installer/output/
 windows/installer/.stage/
 *.tmp
+
+# New app local data / build artifacts
+*.spec
+*.sqlite3-journal
+windows/installer/.work/
+.windows-test/
+*.log

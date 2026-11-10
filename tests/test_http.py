@@ -56,3 +56,16 @@ class HttpTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class MissingHttpTests(HttpTests):
+    def test_original_client_requests_are_logged_without_body(self):
+        status, body = self.request('POST', '/web/ClientService/Process?secret=SHOULD_NOT_LOG', {'private': 'NO'}, None)
+        self.assertEqual(status,501)
+        status, body = self.request('GET', '/web/ClientService/Login?secret=SHOULD_NOT_LOG', token=self.token)
+        self.assertEqual(status,404)
+        with self.server.repo.connect() as db:
+            rows=[dict(x) for x in db.execute('SELECT * FROM missing_requests')]
+        self.assertEqual(len(rows),2)
+        self.assertNotIn('NO',str(rows))
+        self.assertNotIn('SHOULD_NOT_LOG',str(rows))
+        self.assertIn('ClientService/Process',str(rows))

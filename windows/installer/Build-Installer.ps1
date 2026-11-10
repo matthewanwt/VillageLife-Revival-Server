@@ -1,54 +1,24 @@
-# Build a single-file VillageLife-TestSetup.exe from a prepared, PRIVATE-asset-free player stage.
-# Run on Windows with Inno Setup installed. Does not touch the user's v2.11 installation.
+# Compile a staged NEW-backend-only test manager into one installer using Inno Setup.
 [CmdletBinding()]
-param(
-    [Parameter(Mandatory = $true)][string]$StageFolder,
-    [string]$IsccPath = ""
-)
-$ErrorActionPreference = "Stop"
-$stage = (Resolve-Path -LiteralPath $StageFolder).Path
-$needed = @(
-    "StartVillageLife\VillageLifeLauncher.exe",
-    "StartVillageLife\launcher.json",
-    "runtime\python\python.exe",
-    "backend\server.py",
-    "tools\play_local.py",
-    "tools\setup_local.py",
-    "tools\export_diagnostics.py",
-    "tools\diagnose_network.py",
-    "tools\platforms\bluestacks\host_network.py",
-    "tools\platforms\bluestacks\adb.py",
-    "tools\platforms\bluestacks\discovery.py",
-    "tools\open_instance_manager.py",
-    "tools\export_missing_requests.py",
-    "backend\missing_requests.py"
-)
-foreach ($file in $needed) {
-    if (-not (Test-Path -LiteralPath (Join-Path $stage $file) -PathType Leaf)) {
-        throw "Incomplete Windows player stage: $file is missing. The new backend Alpha alone is NOT yet a legacy APK server."
-    }
+param([Parameter(Mandatory=$true)][string]$StageFolder, [string]$IsccPath='')
+$ErrorActionPreference='Stop'
+$stage=(Resolve-Path -LiteralPath $StageFolder).Path
+foreach($item in @('StartVillageLife\VillageLifeLauncher.exe','bin\VillageLifeServer\VillageLifeServer.exe','TEST-READ-ME.txt')) {
+    if(-not (Test-Path -LiteralPath (Join-Path $stage $item) -PathType Leaf)) {throw "Missing required NEW backend build file: $item"}
 }
-$forbidden = Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Object {
-    $_.Extension -in @(".xapk", ".apk", ".obb", ".pfx", ".p12", ".private", ".sqlite", ".db") -or
-    $_.Name -in @("play-settings.json", "setup-network-check.json", "latest-runtime-error.json") -or
-    $_.FullName -match '(?i)[\\/](private_state|backups|experiments|support)[\\/]'
+$prohibited=Get-ChildItem -LiteralPath $stage -Recurse -File | Where-Object {
+    $_.Extension -in @('.xapk','.apk','.obb','.sqlite','.sqlite3','.db','.pfx','.p12') -or
+    $_.Name -in @('play-settings.json','bluestacks-binding.json','state.sqlite3','server.py') -or
+    $_.FullName -match '(?i)[\\/](legacy_reference|private_state|backups|originals|private-assets)[\\/]'
 }
-if ($forbidden) {
-    throw "The stage contains prohibited game assets, credentials or player data. Review and remove them from the STAGE COPY, not the original project. $($forbidden[0].FullName)"
-}
-if (-not $IsccPath) {
-    $candidates = @()
-    foreach ($programs in @(${env:ProgramFiles(x86)}, ${env:ProgramFiles})) {
-        if ($programs) {
-            $candidate = Join-Path $programs "Inno Setup 6\ISCC.exe"
-            if (Test-Path -LiteralPath $candidate -PathType Leaf) { $candidates += $candidate }
+if($prohibited) {throw "Prohibited legacy source or private game/player data found: $($prohibited[0].Name)"}
+if(-not $IsccPath) {
+    foreach($base in @(${env:ProgramFiles(x86)},${env:ProgramFiles})) {
+        if($base -and (Test-Path -LiteralPath (Join-Path $base 'Inno Setup 6\ISCC.exe'))) {
+            $IsccPath=Join-Path $base 'Inno Setup 6\ISCC.exe'; break
         }
     }
-    if ($candidates.Count -eq 0) { throw "Install Inno Setup 6 or provide -IsccPath with the full location of ISCC.exe." }
-    $IsccPath = $candidates[0]
 }
-$script = Join-Path $PSScriptRoot "VillageLife.iss"
-Write-Host "Compiling source-only per-user installer. Original game assets and player saves are excluded."
-& $IsccPath "/DStageDir=$stage" $script
-if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE." }
-Write-Host "Installer output: $(Join-Path $PSScriptRoot 'output\VillageLife-TestSetup.exe')"
+if(-not $IsccPath -or -not (Test-Path -LiteralPath $IsccPath)) {throw 'Inno Setup 6 ISCC.exe not found. Provide -IsccPath.'}
+& $IsccPath "/DStageDir=$stage" (Join-Path $PSScriptRoot 'VillageLife.iss')
+if($LASTEXITCODE -ne 0) {throw "Inno Setup failed with exit code $LASTEXITCODE"}

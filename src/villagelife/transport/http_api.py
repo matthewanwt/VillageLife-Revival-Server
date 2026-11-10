@@ -18,6 +18,7 @@ from villagelife.persistence.sqlite_store import SqliteSaveRepository
 from villagelife.services.dispatcher import ActionDispatcher
 from villagelife.services.jobs import WorldTickCoordinator
 from villagelife.core.clock import SystemClock
+from villagelife.support import record_missing
 
 LOG = logging.getLogger(__name__)
 MAX_REQUEST = 1 * 1024 * 1024
@@ -81,11 +82,21 @@ class ApiHandler(BaseHTTPRequestHandler):
             raise NotFound('Village not found')
         return snapshot
 
+    def _record_missing(self, method: str, path: str, status: int) -> None:
+        # Diagnostics must NEVER change the original HTTP response if storage fails.
+        try:
+            record_missing(self.server.repo, method, path, status)
+        except Exception:
+            LOG.warning('Could not record missing request; HTTP response is unchanged')
+
     def do_GET(self):
         try:
             path = urlsplit(self.path).path
             if path == '/health':
                 return self._json(200, {'ok': True, 'service': 'villagelife-revival-server', 'api': 1})
+            if path.startswith('/web/'):
+                self._record_missing('GET', path, 404)
+                return self._json(404, {'error': 'Original-client protocol is not implemented by this NEW backend'})
             owner = self._auth()
             if path == '/v1/villages':
                 return self._json(200, {'villages': [self._meta(s) for s in self.server.repo.list_villages(owner)]})
@@ -93,14 +104,20 @@ class ApiHandler(BaseHTTPRequestHandler):
             if match:
                 snap = self._owner(owner, match.group(1))
                 return self._json(200, {'village': self._meta(snap), 'payload': snap.payload})
+            self._record_missing(self.command, path, 404)
             return self._json(404, {'error': 'Unknown endpoint'})
         except Exception as exc:
             self._fail(exc)
 
     def do_POST(self):
         try:
-            owner = self._auth()
             path = urlsplit(self.path).path
+            if path.startswith('/web/'):
+                self._record_missing('POST', path, 501)
+                # The unimplemented binary client may have sent an unread body.
+                self.close_connection = True
+                return self._json(501, {'error': 'Original-client protocol is not implemented by this NEW backend'})
+            owner = self._auth()
             if path == '/v1/villages':
                 request = self._read_json()
                 if request and request != {'initialAreaId': 1}:
@@ -129,6 +146,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                     raise InvalidAction('Tick request must be an empty object')
                 ready = self.server.ticks.advance_village(tick.group(1))
                 return self._json(200, {'readyJobIds': ready})
+            self._record_missing(self.command, path, 404)
             return self._json(404, {'error': 'Unknown endpoint'})
         except Exception as exc:
             self._fail(exc)
@@ -148,6 +166,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         if isinstance(error, DuplicateActionConflict):
             return self._json(409, {'error': str(error)})
         if isinstance(error, NotImplementedRule):
+            self._record_missing(self.command, urlsplit(self.path).path, 501)
             return self._json(501, {'error': str(error)})
         if isinstance(error, (InvalidAction, ValueError, UnicodeError, json.JSONDecodeError)):
             return self._json(400, {'error': str(error)})

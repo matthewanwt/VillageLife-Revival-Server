@@ -35,7 +35,7 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(imported.status, 'imported (original untouched)')
         self.assertEqual(importer.import_directory(self.source, apply=True)[0].status, 'already-imported')
         snap = self.repo.read_village(imported.village_id)
-        self.assertEqual(snap.format, 'legacy.v0_2_6')
+        self.assertEqual(snap.format, 'legacy.profile+tutorial.v1')
         self.assertEqual(snap.payload['originalSave'], self.save)
         self.assertEqual(snap.payload['originalProfile'], self.profile)
         self.assertEqual(hashlib.sha256(self.save_path.read_bytes()).hexdigest(), self.original_digest)

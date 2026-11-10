@@ -3,6 +3,7 @@
 Tables provide data, not automatic proof that a game rule behaves as assumed.
 """
 from __future__ import annotations
+from contextlib import contextmanager
 import hashlib
 from pathlib import Path
 import re
@@ -23,12 +24,16 @@ class OriginalGameCatalog:
             self.tables = frozenset(row['name'] for row in db.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"))
 
-    def connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def connect(self):
         uri = 'file:'+quote(str(self.path), safe='/')+'?mode=ro&immutable=1'
         db = sqlite3.connect(uri, uri=True)
         db.row_factory = sqlite3.Row
         db.execute('PRAGMA query_only=ON')
-        return db
+        try:
+            yield db
+        finally:
+            db.close()
 
     def _table(self, table: str) -> str:
         if not _IDENTIFIER.fullmatch(table) or table not in self.tables:

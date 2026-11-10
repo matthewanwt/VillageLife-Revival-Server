@@ -1,4 +1,4 @@
-"""Non-destructive import of original 0.2.6 profile + tutorial save pairs.
+"""Non-destructive import of legacy profile + tutorial save pairs (including 2.11).
 
 Original files are NEVER renamed, moved, rewritten or deleted. The imported
 payload is tagged opaque and cannot accidentally be simulated as native.v1.
@@ -38,7 +38,7 @@ class LegacySaveImporter:
     def import_directory(self, source_dir: str | Path, *, apply: bool = False) -> list[ImportResult]:
         root = Path(source_dir).expanduser().resolve(strict=True)
         if not root.is_dir():
-            raise ValueError('Expected directory of 0.2.6 private_state files')
+            raise ValueError('Expected a directory of legacy private_state files')
         results = []
         for profile_path in sorted(root.iterdir()):
             if profile_path.is_symlink() or not profile_path.is_file() or not PROFILE_PATTERN.fullmatch(profile_path.name):
@@ -77,7 +77,7 @@ class LegacySaveImporter:
         payload = {
             'originalProfile': profile,
             'originalSave': saved,
-            'sourceFormat': '0.2.6-profile+tutorial',
+            'sourceFormat': 'legacy-profile+tutorial',
         }
         # Atomic account + village + mapping creation. Uses JSON with no normalization
         # so original, unknown fields and original family IDs survive unchanged.
@@ -85,7 +85,7 @@ class LegacySaveImporter:
             db.execute('INSERT INTO accounts VALUES (?,?,?)',
                        (account_id, now, str(profile.get('displayName', ''))[:100]))
             db.execute('INSERT INTO villages VALUES (?,?,?,?,?,?,?,?)',
-                       (village_id, account_id, 'legacy.v0_2_6',
+                       (village_id, account_id, 'legacy.profile+tutorial.v1',
                         int(saved.get('version', 0)) if saved else 0,
                         0, dumps(payload), now, now))
             db.execute('INSERT INTO legacy_imports VALUES (?,?,?,?,?,?)',

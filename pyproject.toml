@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "villagelife-revival-server"
-version = "0.1.0a1"
+version = "0.2.0a2"
 description = "Modular preservation backend and save migration toolkit for a Village Life community project"
 requires-python = ">=3.11"
 dependencies = []

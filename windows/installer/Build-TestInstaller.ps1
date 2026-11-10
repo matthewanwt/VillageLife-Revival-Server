@@ -1,74 +1,57 @@
-# Developer-only Windows build. Never modifies the existing 2.11 player folder.
-# Creates a separate, source-only VillageLife-TestSetup.exe for LOCAL testing.
-# Requires: Windows + .NET 10 SDK + Inno Setup 6 + an existing, legitimately
-# distributable bundled Python/.NET runtime from a clean 2.11 player kit.
+# Builds a NEW BACKEND-ONLY Windows test installer. No 2.11 player kit required.
+# Run in PowerShell on Windows with Python/.venv + PyInstaller, .NET 10 SDK,
+# Inno Setup 6. All outputs are kept separate from the repository and old saves.
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$true)][string]$PlayerKitRoot,
+    [string]$PythonPath = "",
     [string]$StageFolder = "",
     [string]$IsccPath = ""
 )
-$ErrorActionPreference = "Stop"
-$source = (Resolve-Path -LiteralPath $PlayerKitRoot).Path
-$repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
-if (-not $StageFolder) { $StageFolder = Join-Path $env:TEMP "VillageLife-TestBuild-$(Get-Date -Format yyyyMMddHHmmss)" }
+$ErrorActionPreference = 'Stop'
+$repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
+if (-not $PythonPath) { $PythonPath = Join-Path $repo '.venv/Scripts/python.exe' }
+if (-not (Test-Path -LiteralPath $PythonPath -PathType Leaf)) {
+    throw 'Missing project Python .venv. Run: py -3 -m venv .venv; .\.venv\Scripts\python.exe -m pip install -e . pyinstaller'
+}
+if (-not $StageFolder) { $StageFolder = Join-Path $env:TEMP ('VillageLife-NextTest-'+(Get-Date -Format 'yyyyMMddHHmmssfff')) }
 $stage = [System.IO.Path]::GetFullPath($StageFolder)
-if ($stage.StartsWith($source + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) -or
-    $stage.Equals($source, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "Refusing to build inside the original player kit: choose a SEPARATE stage folder."
+if (Test-Path -LiteralPath $stage) { throw "Stage already exists: $stage" }
+if ($stage.StartsWith($repo+[System.IO.Path]::DirectorySeparatorChar,[System.StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Build stage must be OUTSIDE the repository.'
 }
-if (Test-Path -LiteralPath $stage) { throw "Stage folder already exists; choose a NEW empty directory: $stage" }
-foreach ($name in @("runtime\python\python.exe", "runtime\dotnet\dotnet.exe")) {
-    if (-not (Test-Path -LiteralPath (Join-Path $source $name) -PathType Leaf)) {
-        throw "Missing clean bundled runtime $name in PlayerKitRoot. Use an unpacked 2.11 player kit (not the 55 GB working folder)."
-    }
+$null = Get-Command dotnet -ErrorAction Stop
+& $PythonPath -m PyInstaller --version
+if ($LASTEXITCODE -ne 0) { throw 'Install PyInstaller in .venv: .\.venv\Scripts\python.exe -m pip install pyinstaller' }
+New-Item -ItemType Directory -Path $stage -Force | Out-Null
+$backendDist = Join-Path $stage 'bin'
+$pyWork = Join-Path $stage 'pyinstaller-work'
+$spec = Join-Path $stage 'spec'
+& $PythonPath -m PyInstaller --noconfirm --clean --onedir --console --name VillageLifeServer `
+    --paths (Join-Path $repo 'src') --collect-submodules villagelife `
+    --distpath $backendDist --workpath $pyWork --specpath $spec `
+    (Join-Path $repo 'windows/installer/new_backend_entry.py')
+if ($LASTEXITCODE -ne 0) { throw 'New Python backend bundling failed' }
+if (-not (Test-Path -LiteralPath (Join-Path $backendDist 'VillageLifeServer/VillageLifeServer.exe'))) {
+    throw 'NEW backend executable is missing from the build output'
 }
-$dotnet = Get-Command dotnet -ErrorAction Stop
-New-Item -ItemType Directory -Force -Path $stage | Out-Null
-foreach ($kind in @("python", "dotnet")) {
-    New-Item -ItemType Directory -Force -Path (Join-Path $stage "runtime\$kind") | Out-Null
-    Copy-Item -Path (Join-Path $source "runtime\$kind\*") -Destination (Join-Path $stage "runtime\$kind") -Recurse -Force
-}
-Copy-Item -LiteralPath (Join-Path $repo "legacy_reference\backend") -Destination (Join-Path $stage "backend") -Recurse
-Copy-Item -LiteralPath (Join-Path $repo "windows\tools") -Destination (Join-Path $stage "tools") -Recurse
-# Ensure no test caches or source-tree data get distributed.
-Get-ChildItem -LiteralPath $stage -Recurse -Directory | Where-Object Name -in @("__pycache__", ".pytest_cache") | Remove-Item -Recurse -Force
 $publish = Join-Path $stage 'StartVillageLife'
-Write-Host "Building the CURRENT C# launcher with the new buttons (Windows x64)."
-& $dotnet.Source publish (Join-Path $repo "windows\launcher\VillageLifeLauncher.csproj") -c Release -r win-x64 --self-contained true `
-    -p:PublishSingleFile=false -o $publish
-if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
-Copy-Item -LiteralPath (Join-Path $repo 'windows\launcher\launcher.json') -Destination (Join-Path $publish 'launcher.json')
-# Native APK signing code currently launches the bundled dotnet host and the
-# published launcher assembly, so keep both files in place.
-if (-not (Test-Path -LiteralPath (Join-Path $publish 'VillageLifeLauncher.dll'))) {
-    throw "Expected signing assembly is absent: VillageLifeLauncher.dll"
+& dotnet publish (Join-Path $repo 'windows/launcher/VillageLifeLauncher.csproj') -c Release `
+    -r win-x64 --self-contained true -p:PublishSingleFile=false -o $publish
+if ($LASTEXITCODE -ne 0) { throw 'C# test manager publish failed' }
+if (-not (Test-Path -LiteralPath (Join-Path $publish 'VillageLifeLauncher.exe'))) {
+    throw 'C# test manager executable was not published'
 }
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-$versionJson = @{
-    restoration_version = "2.11-windows-test"
-    release_scope = "PRIVATE development test; Wi-Fi network isolation unverified"
-    full_multiplayer_verified = $false
-} | ConvertTo-Json
-[System.IO.File]::WriteAllText((Join-Path $stage 'VERSION.json'), $versionJson, $utf8NoBom)
-$communityJson = @{
-    version = "2.11-windows-test"
-    game_files_included = $false
-    personal_saves_included = $false
-    setup_uses_recipients_original_xapk = $true
-} | ConvertTo-Json
-[System.IO.File]::WriteAllText((Join-Path $stage 'COMMUNITY-PACKAGE.json'), $communityJson, $utf8NoBom)
+# Generated build intermediates never go into the installer.
+Remove-Item -LiteralPath $pyWork,$spec -Recurse -Force
 @'
-Village Life Windows test player. This installer is NOT a public release.
-Install BlueStacks 5 separately. Use Instance Manager to create a Pie64 VM.
-Click Set Up Game, select the instance and supply your OWN supported XAPK.
-The current Wi-Fi-on isolation design has NOT been validated and setup may
-reject a network configuration. Do not bypass the network guard.
-The original 2.11 player folder is never changed by the build.
-'@ | Set-Content -LiteralPath (Join-Path $stage 'TEST-BUILD-NOTICE.txt') -Encoding UTF8
-$builder = Join-Path $PSScriptRoot 'Build-Installer.ps1'
-Write-Host "Preparing isolated test installer stage: $stage"
-& $builder -StageFolder $stage -IsccPath $IsccPath
-if ($LASTEXITCODE -ne 0) { throw "Installer step failed" }
-Write-Host "TEST INSTALLER: $(Join-Path $PSScriptRoot 'output\VillageLife-TestSetup.exe')"
-Write-Warning 'Windows host/BlueStacks networking and full APK setup MUST be validated before distributing to other players.'
+NEW BACKEND TEST BUILD - NOT THE ORIGINAL APK GAME PLAYER.
+This installer includes ONLY the new modular API (/v1), its account/save store,
+read-only BlueStacks selection/diagnostics and one-way legacy save importer.
+The original binary ClientService protocol is NOT implemented yet. You CANNOT
+play the original Village Life APK with this build; there is NO old fallback.
+Original 2.11 saves are NOT automatically migrated or modified.
+Wi-Fi-on guest isolation has NOT been established.
+'@ | Set-Content -LiteralPath (Join-Path $stage 'TEST-READ-ME.txt') -Encoding UTF8
+& (Join-Path $PSScriptRoot 'Build-Installer.ps1') -StageFolder $stage -IsccPath $IsccPath
+if ($LASTEXITCODE -ne 0) { throw 'Installer creation failed' }
+Write-Host 'Output: windows\installer\output\VillageLife-NextBackend-TestSetup.exe'

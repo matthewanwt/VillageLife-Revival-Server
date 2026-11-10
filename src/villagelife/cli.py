@@ -9,6 +9,7 @@ from villagelife.persistence.sqlite_store import SqliteSaveRepository
 from villagelife.persistence.auth_store import AccountTokens
 from villagelife.persistence.legacy_import import LegacySaveImporter
 from villagelife.persistence.portable import PortableSaves
+from villagelife.platforms import bluestacks as bs
 
 
 def default_db() -> Path:
@@ -19,7 +20,7 @@ def default_db() -> Path:
         base = Path(os.environ.get('LOCALAPPDATA') or Path.home() / 'AppData' / 'Local')
     else:
         base = Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local' / 'share')
-    return base / 'VillageLifeRevival' / 'worlds.sqlite3'
+    return base / 'VillageLifeRevivalNext' / 'worlds.sqlite3'
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,8 +38,41 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser('import-portable'); a.add_argument('owner_id'); a.add_argument('archive', type=Path)
     a = sub.add_parser('backup-db'); a.add_argument('output', type=Path)
     a = sub.add_parser('serve'); a.add_argument('--port', type=int, default=8765)
+    sub.add_parser('list-instances')
+    a = sub.add_parser('bind-instance'); a.add_argument('instance_id')
+    sub.add_parser('verify-instance')
+    sub.add_parser('start-instance')
+    sub.add_parser('adb-check')
+    sub.add_parser('open-instance-manager')
+    sub.add_parser('export-missing-requests')
+    sub.add_parser('network-report')
+    a = sub.add_parser('export-support'); a.add_argument('output', type=Path)
+
     args = parser.parse_args(argv)
+    binding = default_db().parent/'bluestacks-binding.json'
+    if args.command == 'list-instances':
+        print(json.dumps([vars(x) for x in bs.list_instances()], ensure_ascii=False)); return 0
+    if args.command == 'bind-instance':
+        selected = bs.select_by_id(bs.list_instances(), args.instance_id)
+        print(json.dumps(bs.bind_instance(binding, selected, bs.installation()), ensure_ascii=False)); return 0
+    if args.command == 'verify-instance':
+        print('Verified:', bs.verify_binding(binding, bs.list_instances(), bs.installation()).id); return 0
+    if args.command == 'start-instance':
+        print('Started:', bs.start_bound_instance(binding)); return 0
+    if args.command == 'adb-check':
+        print(json.dumps(bs.adb_status(binding))); return 0
+    if args.command == 'open-instance-manager':
+        bs.open_manager(); print('Opened Multi-instance Manager'); return 0
+    if args.command == 'network-report':
+        from villagelife.platforms.network import report
+        print(json.dumps(report(binding), indent=2)); return 0
+    if args.command == 'export-support':
+        from villagelife.support import export_support
+        print('Created:', export_support(args.output, binding)); return 0
     repo = SqliteSaveRepository(args.db)
+    if args.command == 'export-missing-requests':
+        from villagelife.support import export_missing
+        print('Created:', export_missing(repo)); return 0
     if args.command == 'init-db':
         print('Database initialised:', repo.path)
     elif args.command == 'create-account':
@@ -74,5 +108,21 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def run(argv: list[str] | None = None) -> int:
+    # Preserve clear, supportable error codes without printing private paths or
+    # raw player data when a Windows user triggers a diagnostic failure.
+    try:
+        return main(argv)
+    except bs.InstanceError as exc:
+        print(str(exc), file=__import__('sys').stderr)
+        return 2
+    except (FileNotFoundError, FileExistsError, ValueError) as exc:
+        print('[VL-USER-ACTION] '+type(exc).__name__+': '+str(exc)[:300], file=__import__('sys').stderr)
+        return 2
+    except OSError as exc:
+        print('[VL-IO-ERROR] Could not access a required file or service ('+type(exc).__name__+').', file=__import__('sys').stderr)
+        return 3
+
+
 if __name__ == '__main__':
-    raise SystemExit(main())
+    raise SystemExit(run())

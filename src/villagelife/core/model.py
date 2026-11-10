@@ -1,6 +1,6 @@
 """Boundary types independent of an HTTP protocol, renderer or save database.
 
-The new native schema is deliberately small. The original 0.2.6 save is an
+The new native schema is deliberately small. The old-format save is an
 opaque, separately tagged format until original fields are mapped and proven.
 """
 from dataclasses import dataclass

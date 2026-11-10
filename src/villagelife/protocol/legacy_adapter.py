@@ -1,7 +1,6 @@
 """Adapter boundary for ORIGINAL APK RPCs.
 
-A compatible response implementation has NOT been ported yet. The legacy
-0.2.6 source is retained under legacy_reference/ for controlled transfer.
+A compatible response implementation has NOT been ported yet. No historical server source is shipped. Unknown behaviour is rejected, not guessed.
 """
 from typing import Protocol
 from villagelife.core.errors import NotImplementedRule

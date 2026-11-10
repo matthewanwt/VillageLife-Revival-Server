@@ -86,7 +86,7 @@ class WorldTickCoordinator:
     def advance_village(self, village_id: str) -> list[str]:
         snapshot = self.store.read_village(village_id)
         if snapshot.format != 'native.v1':
-            return []  # Do not mutate opaque migrated 0.2.6 saves.
+            return []  # Do not mutate opaque imported legacy saves.
         due_ids = [key for key, job in snapshot.payload.get('jobs', {}).items()
                    if job.get('status') == 'working' and isinstance(job.get('dueAt'), int)
                    and job['dueAt'] <= self.clock.now()]

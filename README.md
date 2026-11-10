@@ -1,151 +1,79 @@
-# Village Life Revival Server — architecture redesign (alpha)
+# Village Life Revival | New Backend Alpha
 
-A **new, modular Python backend** for the community preservation project, based on the
-user-provided Village Life backend (reported by the project owner as v2.11). The original playable backend **has not
-been modified**. Its 28 source modules and 40 original test files are retained under
-`legacy_reference/`, *without* private state, compiled outputs, the APK/XAPK or assets.
+**This is a new, independent backend and Windows development test manager.**
 
-> **Important:** This is an **architecture and migration foundation**, **not yet a
-> drop-in replacement for the playable 2.11 server**. The original game's RPCs,
-> economy rules, world generation, buildings, family logic and much of multiplayer
-> still need to be ported and validated. Unknown behaviour explicitly fails rather
-> than silently inventing rewards, family members or scenarios.
+The historical 2.11 server, its Python gameplay modules, private saves, and original client binaries are **not shipped or executed**. A one-way, non-destructive importer reads *copies* of old profile/tutorial saves. This is not yet a playable replacement for the original Village Life Android APK: its binary `ClientService` protocol and much gameplay remain unimplemented.
 
-## What works today
-
-- Clean Python package with documented, tested service boundaries and optional HTTP transport.
-- New SQLite repository using transactions, per-village revisions and idempotency receipts.
-- Separate account and village identity; revocable, hashed API tokens for the new API.
-- **Copy-only** legacy profile/save migration that preserves all unknown fields verbatim
-  in a tagged `legacy.v0_2_6 (historical internal label; the uploaded source was v2.11)` payload, plus dry-run, checksums and conflict detection.
-- Portable save export/import with SHA-256 integrity checks; imports create a **new** village.
-- Deterministic timed-job readiness and offline catch-up, with **no unverified reward grants**.
-- Consent-based new-API friendship persistence (not yet exposed to the original APK).
-- Legacy XOR/zlib protocol encoding isolated behind an adapter.
-- A loopback-only development HTTP API; not an original-client endpoint replacement.
-- A set of new synthetic-fixture regression tests. Legacy tests are retained for future parity work.
-
-## Why this repository is separate
-
-The goal is portable logic and state, *not* preserving Windows/BlueStacks dependencies
-in the core domain. Future original-APK compatibility, local-server launchers,
-Godot/native clients and hosted multiplayer can each have distinct adapters using the
-same gameplay services and persistence contracts.
-
-## Setup on Windows
-
-Using Python 3.11 or newer, inside a **copy or clone of this repository**:
+## Local Python tests (Windows PowerShell)
 
 ```powershell
 py -3 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e .
-python -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-The implementation uses the Python standard library. Package installation requires
-setuptools (a standard packaging tool).
+The test suite runs on **synthetic** save fixtures and mock BlueStacks configs; it never reads your real saves, modifies a BlueStacks VM, or changes network restrictions.
 
-Initialize a fresh database in your local user data directory:
+To test the actual new backend locally:
 
 ```powershell
-python -m villagelife init-db
-python -m villagelife create-account --name "Development Tester"
-# Use the account ID printed by the previous command:
-python -m villagelife issue-token YOUR_ACCOUNT_ID
-python -m villagelife create-village YOUR_ACCOUNT_ID
-python -m villagelife serve --port 8765
+.\.venv\Scripts\python.exe -m villagelife init-db
+.\.venv\Scripts\python.exe -m villagelife serve --port 8765
 ```
 
-The diagnostic endpoint is at `http://127.0.0.1:8765/health`.
-Authenticated API requests use `Authorization: Bearer YOUR_TOKEN`.
-The development village is an **empty fixture**, not a recreation of the original tutorial.
-
-### Import saves from your current working version (non-destructive)
-
-1. **Preserve your entire old project; do not delete or move it.**
-2. Stop your old Village Life game/server and make a separate backup of
-   `backend/private_state/` before taking a stable save snapshot.
-3. Prefer running the import against that backup or a read-only copy.
-4. Preview the import:
+In another terminal:
 
 ```powershell
-python -m villagelife import-legacy "D:\VillageLife-Old\backend\private_state"
+Invoke-RestMethod http://127.0.0.1:8765/health
 ```
 
-5. When happy with the preview, add `--apply`:
+By default the new database is in `%LOCALAPPDATA%\VillageLifeRevivalNext\worlds.sqlite3`. It's deliberately distinct from old player saves. To test two completely separate profiles, add `--db "C:\SomeTestFolder\A.sqlite3"` / `--db "...\B.sqlite3"` **before** the command. You can create accounts and villages using the CLI, then test their APIs. Tests must not use real player data without an independent backup.
+
+## Build the single EXE installer on Windows
+
+Requires Windows x64, **.NET 10 SDK**, **Inno Setup 6**, and Python 3.11+ with PyInstaller installed in the local `.venv`.
 
 ```powershell
-python -m villagelife import-legacy "D:\VillageLife-Old\backend\private_state" --apply
+.\.venv\Scripts\python.exe -m pip install pyinstaller
+.\windows\installer\Build-TestInstaller.ps1
 ```
 
-**This copies data into the new SQLite database and never changes the original files.**
-The imported save is protected as opaque until its fields have been mapped against
-original-client behaviour. **Do not point the old launcher at the new server yet.**
-Details: [`docs/SAVE_MIGRATION.md`](docs/SAVE_MIGRATION.md).
+The builder creates a standalone `VillageLifeServer.exe` with PyInstaller, publishes the WinForms manager as a self-contained .NET application, then creates `windows\installer\output\VillageLife-NextBackend-TestSetup.exe` with Inno Setup. **No old 2.11 runtime kit is needed.** Python is only required on the developer build computer, not on the testing computer. Build and actual installer execution require Windows; this source ZIP was **not** compiled into a Windows installer in the Linux validation environment.
 
-## Code map
+The installed manager can start/stop the **new** API, check its health, enumerate and explicitly bind a BlueStacks Pie64 instance, revalidate its ADB port, generate a read-only network evidence report, and perform an old-save migration **dry run**. There is deliberately no button to run the original APK: no honest compatibility claim can be made until its RPC is ported and gameplay verified.
 
-```text
-src/villagelife/
-  core/           models, clocks, IDs, interfaces, validated original rules
-  persistence/    SQLite repository, hashed tokens, social graph, import/export
-  services/       areas, buildings, jobs, families, command dispatcher
-  simulation/     optional background ticking (same logic as offline catch-up)
-  protocol/       original wire codec and legacy RPC adapter boundary
-  transport/      authenticated NEW API (loopback-only)
-  cli.py          database, test accounts, backups, migration and local server
-legacy_reference/
-  backend/        untouched original Python source modules (reference ONLY)
-  tests/          original tests; depend on generated game databases
-  README.md       scope/limitations
-  docs/           architecture and migration design notes
-  tests/          runnable synthetic tests for the redesigned foundation
-  tools/          audits and migration helpers
+## Saved instance behaviour
+
+Selection is by exact BlueStacks internal ID (`Pie64_4`, for example), not by display name or hardcoded ADB port. A deleted, renamed, or reconfigured selected instance generates an explicit error rather than defaulting to `Pie64`. Instance preferences are stored under `%LOCALAPPDATA%\VillageLifeRevivalNext`. The launcher never changes BlueStacks VM files or firewall rules.
+
+**Wi-Fi-on game isolation is not solved.** Guest routing and a few failed external TCP probes are not evidence that all UDP, DNS, IPv6 or other egress is blocked. See `docs/READINESS_AND_GAPS.md`.
+
+## Save migration
+
+`python -m villagelife import-legacy <copy-of-private_state>` only reports what would be imported. `--apply` copies the original profile and tutorial save into opaque versioned records in the NEW database, preserving unknown fields. It never changes the source files. It **does not** translate legacy gameplay into playable native state yet. See `docs/SAVE_MIGRATION.md`.
+
+## Repository policy
+
+Keep XAPK/APK/OBB in a **Git-ignored** local folder (e.g. `private-assets/VillageLife.xapk`); none is required to build the new-backend test manager. Never commit real player saves, credentials, extracted game content or report ZIPs. A source-only installation is not permission to redistribute the original APK.
+
+## Updating an existing checkout
+
+**Copy-overwriting is not the same as removing obsolete files.** Commit or back up first. After extracting this ZIP into the GitHub repository, explicitly remove from the *new checkout only* any stale `legacy_reference/`, old `windows/tools/`, old `windows/tests/`, and previous `backend/` source folder. First inspect each for local player data, then move that data to a safe backup **outside Git**. Do not remove or alter the original 55 GB working installation. Keep `.git` intact. Inspect `git status` and the tracked-file list before pushing. This release archive intentionally contains no legacy backend source at all.
+
+### Optional safe cleanup of previous repository-only files
+
+To preview old source files left behind by copying ZIPs over an existing checkout:
+
+```powershell
+.\tools\Archive-ObsoleteRepositoryFiles.ps1 -ArchiveDir "C:\VL-Archive\OldRepoFiles"
 ```
 
-## For GitHub Desktop
+After reviewing the list, commit your checkout, choose a new/empty external archive folder, then add `-Apply` to **move** those obsolete sources outside the repository. It never deletes, never touches `.git`, and deliberately leaves any `backend/` folder alone because it might hold live saves. Do not point it at the preserved 55 GB original project.
 
-Copy this ZIP's contents into the cloned **`VillageLife-Revival-Server`** repo,
-review the file changes, run the test command, then commit and push. The `.gitignore`
-is protective, but **inspect the staged file list** for secrets or private saves.
-Do not copy your original `backend/private_state`, `analysis/private`, APK, OBB,
-XAPK, backups or 55 GB experiments into Git.
+### Portable end-to-end smoke test
 
-## Documentation
+```powershell
+.\.venv\Scripts\python.exe tools\smoke_new_backend.py
+```
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — dependency rules and adapters.
-- [`docs/SYSTEM_COVERAGE.md`](docs/SYSTEM_COVERAGE.md) — mapping of every original module.
-- [`docs/SAVE_MIGRATION.md`](docs/SAVE_MIGRATION.md) — copy-only import, identity and later schema conversion.
-- [`docs/GAME_RULES.md`](docs/GAME_RULES.md) — provenance standard and missing game rules.
-- [`docs/API.md`](docs/API.md) — new API and security boundaries.
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — milestones to restore original-APK parity.
-- [`docs/SECURITY.md`](docs/SECURITY.md) — privacy, hosting, licensing and distribution.
-
-No redistribution rights to the original commercial game, client, graphics or music are implied.
-
-## Current verification
-
-See [`docs/DELIVERY_STATUS.md`](docs/DELIVERY_STATUS.md) for test results and
-limitations. The new source includes `catalog/` read-only original-table access,
-world-object identity and exact inventory helper services in addition to the
-core modules listed above.
-
-## Windows launcher, BlueStacks and EXE installer (separate integration)
-
-The `windows/` directory contains a **source-only Windows compatibility update** prepared from the uploaded 2.11 tools, a dedicated `tools/platforms/bluestacks/` adapter, a WinForms launcher with support-bundle export, synthetic regression tests, and an Inno Setup project. It does **not** replace the redesigned backend with the legacy server and is **not yet a verified installer EXE**. See [`windows/README.md`](windows/README.md).
-
-## Windows BlueStacks development test update
-
-The `windows/` folder contains the version 2.11 launcher/compatibility update,
-including separate-instance selection, local ADB binding, read-only Wi-Fi
-network diagnostics, and **Export Missing Requests** for unimplemented
-original-client RPCs. The compatible legacy code remains distinct from the
-future modular `src/villagelife` implementation.
-
-On Windows, a **separate test installer EXE** can be built from a clean 2.11
-player kit using `windows/installer/Build-TestInstaller.ps1`, .NET 10 SDK and
-Inno Setup 6. See [Windows installer instructions](windows/docs/INSTALLER.md).
-A runnable Windows EXE is not included in this source ZIP; Windows compilation
-and BlueStacks acceptance testing are still required. The user's working 2.11
-folder and saves remain untouched by this source update.
+This runs the new API with an ephemeral localhost port and throwaway SQLite database, checks `/health`, verifies an old client endpoint correctly returns `501` rather than silently invoking 2.11, and verifies missing-request exports contain no submitted body or query string.
