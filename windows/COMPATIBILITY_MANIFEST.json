@@ -1,18 +1,35 @@
 {
   "source_release_claimed_by_owner": "2.11",
-  "source_archive": "tools.zip plus uploaded backend.zip as retained legacy reference",
-  "current_backend": "Alpha architecture; not original APK compatible",
-  "windows_launcher_status": "candidate source, not compiled Windows installer",
-  "synthetic_new_tests_passed": 10,
-  "new_backend_tests_passed": 14,
-  "focused_legacy_tool_tests_passed": 20,
-  "wifi_on_policy_verified": false,
-  "bluestacks_real_tested": false,
-  "backend_legacy_parity": false,
-  "notes": [
-    "Port 80 is fixed in current APK patch",
-    "Only one save snapshot per new launch",
-    "Original 55GB folder not modified",
-    "All original player saves excluded"
-  ]
+  "source_baseline": "VillageLife_Revival_Server_2.11_WiFi_Topology_Update.zip",
+  "release_type": "Development source only; Windows test installer build script provided",
+  "legacy_apk_protocol_compatible": "Compatibility backend retained from original 2.11 code; new modular server still incomplete",
+  "bluestacks_instance_selection": "Explicit stable internal ID; live port rediscovered and validated each launch",
+  "bluestacks_creation": "Guided official GUI creation; no unsupported automated VM-file manipulation",
+  "test_instance_reported_by_user": {"display_name": "VLTest1", "instance_id": "Pie64_4", "adb_port_observed": 5595},
+  "missing_request_reporting": {
+    "status": "Implemented in instrumented legacy compatibility server and launcher source",
+    "export_button": "Export Missing Requests",
+    "captures": "Unimplemented original-client RPCs / unknown routes / explicit 5xx errors",
+    "excludes": "Raw bodies, player saves, user IDs, authentication headers and IP addresses"
+  },
+  "installer": {
+    "status": "Build script only; no Windows executable compiled in Linux",
+    "name_when_built": "VillageLife-TestSetup.exe",
+    "separate_app_id_and_directory": true,
+    "requires": "Windows, .NET 10 SDK, Inno Setup 6 and existing clean 2.11 bundled runtimes",
+    "original_xapk_included": false
+  },
+  "wifi_isolation_verified": false,
+  "routing_observed": "VLTest1 routes external IPv4 via 10.0.2.2; routing is not isolation evidence",
+  "automated_tests": {
+    "new_modular_backend_passed": 14,
+    "windows_tool_test_cases_ran": 80,
+    "windows_tool_errors_from_absent_original_game_database": 13,
+    "new_missing_request_tests_passed": 7,
+    "new_instance_manager_tests_passed": 4,
+    "note": "Not run on Windows or BlueStacks; original game fixtures absent"
+  },
+  "original_user_installation_modified": false,
+  "includes_original_game_files": false,
+  "includes_private_player_saves": false
 }

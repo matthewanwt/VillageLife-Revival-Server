@@ -26,6 +26,11 @@ class BlueStacksInstallation:
         return self.directory / "BstkVMMgr.exe"
 
     @property
+    def gui_manager(self) -> Path:
+        """The BlueStacks GUI; distinct from BstkVMMgr.exe VM-control CLI."""
+        return self.directory / "HD-MultiInstanceManager.exe"
+
+    @property
     def key(self) -> str:
         return str(self.directory.resolve()).casefold()
 

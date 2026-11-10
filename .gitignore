@@ -13,6 +13,10 @@ build/
 dist/
 
 # Local secrets, runtime stores, player data, save history, database journals
+play-settings.json
+**/play-settings.json
+private-assets/
+**/private-assets/
 .env
 .env.*
 !.env.example
@@ -61,3 +65,15 @@ analysis/runtime_inputs/
 .DS_Store
 Thumbs.db
 *.zip
+
+# Local host/instance diagnostics (generated on player machines)
+network-topology-report.json
+SETUP DIAGNOSTICS.json
+setup-network-check.json
+latest-runtime-error.json
+
+# Runtime support bundles and developer-only build stages
+support/
+windows/installer/output/
+windows/installer/.stage/
+*.tmp

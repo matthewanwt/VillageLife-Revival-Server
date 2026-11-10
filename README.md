@@ -134,3 +134,18 @@ core modules listed above.
 ## Windows launcher, BlueStacks and EXE installer (separate integration)
 
 The `windows/` directory contains a **source-only Windows compatibility update** prepared from the uploaded 2.11 tools, a dedicated `tools/platforms/bluestacks/` adapter, a WinForms launcher with support-bundle export, synthetic regression tests, and an Inno Setup project. It does **not** replace the redesigned backend with the legacy server and is **not yet a verified installer EXE**. See [`windows/README.md`](windows/README.md).
+
+## Windows BlueStacks development test update
+
+The `windows/` folder contains the version 2.11 launcher/compatibility update,
+including separate-instance selection, local ADB binding, read-only Wi-Fi
+network diagnostics, and **Export Missing Requests** for unimplemented
+original-client RPCs. The compatible legacy code remains distinct from the
+future modular `src/villagelife` implementation.
+
+On Windows, a **separate test installer EXE** can be built from a clean 2.11
+player kit using `windows/installer/Build-TestInstaller.ps1`, .NET 10 SDK and
+Inno Setup 6. See [Windows installer instructions](windows/docs/INSTALLER.md).
+A runnable Windows EXE is not included in this source ZIP; Windows compilation
+and BlueStacks acceptance testing are still required. The user's working 2.11
+folder and saves remain untouched by this source update.

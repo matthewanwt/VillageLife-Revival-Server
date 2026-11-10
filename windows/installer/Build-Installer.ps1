@@ -1,4 +1,4 @@
-# Build a single-file VillageLifeSetup.exe from a prepared, PRIVATE-asset-free player stage.
+# Build a single-file VillageLife-TestSetup.exe from a prepared, PRIVATE-asset-free player stage.
 # Run on Windows with Inno Setup installed. Does not touch the user's v2.11 installation.
 [CmdletBinding()]
 param(
@@ -15,8 +15,13 @@ $needed = @(
     "tools\play_local.py",
     "tools\setup_local.py",
     "tools\export_diagnostics.py",
+    "tools\diagnose_network.py",
+    "tools\platforms\bluestacks\host_network.py",
     "tools\platforms\bluestacks\adb.py",
-    "tools\platforms\bluestacks\discovery.py"
+    "tools\platforms\bluestacks\discovery.py",
+    "tools\open_instance_manager.py",
+    "tools\export_missing_requests.py",
+    "backend\missing_requests.py"
 )
 foreach ($file in $needed) {
     if (-not (Test-Path -LiteralPath (Join-Path $stage $file) -PathType Leaf)) {
@@ -46,4 +51,4 @@ $script = Join-Path $PSScriptRoot "VillageLife.iss"
 Write-Host "Compiling source-only per-user installer. Original game assets and player saves are excluded."
 & $IsccPath "/DStageDir=$stage" $script
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE." }
-Write-Host "Installer output: $(Join-Path $PSScriptRoot 'output\VillageLifeSetup.exe')"
+Write-Host "Installer output: $(Join-Path $PSScriptRoot 'output\VillageLife-TestSetup.exe')"

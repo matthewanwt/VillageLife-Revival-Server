@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse,csv,datetime,http.server,json,sqlite3,threading,time,urllib.parse,zipfile,io
 from codec import decode,encode
 from session import login,process
+from missing_requests import MissingRequestRecorder
 import community,session,player_access,social
 ROOT=Path(__file__).resolve().parents[1]
 class Server(http.server.ThreadingHTTPServer):
@@ -45,7 +46,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
   if row:
    with self.server.obb.open('rb') as f:f.seek(int(row['offset_in_tcf']));data=f.read(int(row['stored_bytes']))
    self.record(dict(method='GET',served=key,bytes=len(data)));self.reply(200,data);return
-  self.record(dict(method='GET',unimplemented=True));self.reply(404,b'<HTML>Not implemented</HTML>','text/html')
+  self.record(dict(method='GET',unimplemented=True));self.server.missing.record(method='GET',route=self.path,status=404);self.reply(404,b'<HTML>Not implemented</HTML>','text/html')
  def do_POST(self):
   self.request_started=time.monotonic()
   self.connection.settimeout(15)
@@ -55,6 +56,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
    self.record(dict(method='TRANSPORT_ERROR',error=type(ex).__name__,message=str(ex)))
   except Exception as ex:
    self.record(dict(method='SERVER_ERROR',error=type(ex).__name__,message=str(ex)))
+   self.server.missing.record(method='POST',route=self.path,status=500,category='server_failure')
    self.reply(500,b'Local service error; check private server log','text/plain')
  def post_message(self):
   account=self.account()
@@ -84,6 +86,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
       profile,saved=matches[0];local_user={'Id':int(profile['pId']),'Name':saved.get('normal',{}).get('user',{}).get('name','Local Village'),'GroupId':0,'IsAcceptingInvites':False,'XpLevel':saved.get('normal',{}).get('user',{}).get('userLevelID',1)}
      response=community.process(document,local_user,(lambda service,data:session.community_relationship_operation(profile,service,data)) if len(matches)==1 else None)
    except ValueError as ex:self.reply(400,str(ex).encode());return
+   self.server.missing.rpc_failures(self.path,document,response,community=True)
    self.record(dict(method='RESPONSE',implemented='local community services; chat disabled',status=200,calls=[{'id':str(c.get('Id','')),'code':c['code'],'message':c.get('message','')} for c in response['data']]))
    self.reply(200,encode(response,compressed=mode=='zlib-xor'));return
   if urllib.parse.urlsplit(self.path).path.rstrip('/')=='/web/ClientService/Login':
@@ -94,8 +97,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
   if urllib.parse.urlsplit(self.path).path.rstrip('/')=='/web/ClientService/Process':
    try:response=process(document,native_ids=True)
    except ValueError as ex:self.reply(400,str(ex).encode());return
+   self.server.missing.rpc_failures(self.path,document,response)
    self.record(dict(method='RESPONSE',calls=[dict(id=c['id'],code=c['code'],message=c.get('message','')) for c in response['data']['calls']],elapsed_ms=round((time.monotonic()-self.request_started)*1000,2)))
    self.reply(200,encode(response,compressed=mode=='zlib-xor'));return
+  self.server.missing.record(method='POST',route=self.path,status=501)
   self.reply(501,encode({'code':501,'message':'Local service contract not implemented yet','data':{}},compressed=mode=='zlib-xor'))
 
 def main():
@@ -107,7 +112,7 @@ def main():
  out=(args.log_dir or ROOT/'experiments')/('local-service-'+datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ'));out.mkdir(parents=True,exist_ok=False)
  with zipfile.ZipFile(next(ROOT.glob('*.xapk'))) as z:
   with zipfile.ZipFile(io.BytesIO(z.read('com.playdemic.villagelife.android.apk'))) as a:manifest=a.read('assets/origmanifest.xml')
- srv=Server(('127.0.0.1',args.port),Handler);srv.log=out/'requests.jsonl';srv.log_lock=threading.Lock();srv.manifest=manifest;srv.summary_logs=args.summary_logs or bool(args.access_file);srv.access_file=args.access_file
+ srv=Server(('127.0.0.1',args.port),Handler);srv.missing=MissingRequestRecorder(session.STATE/'diagnostics'/'missing_requests.jsonl');srv.log=out/'requests.jsonl';srv.log_lock=threading.Lock();srv.manifest=manifest;srv.summary_logs=args.summary_logs or bool(args.access_file);srv.access_file=args.access_file
  srv.obb=next((ROOT/'analysis/runtime_inputs').glob('*.obb'))
  with (ROOT/'analysis/obb_tcf.inventory.csv').open(encoding='utf-8') as f:srv.assets={r['path']:r for r in csv.DictReader(f)}
  (out/'service.json').write_text(json.dumps(dict(bind='127.0.0.1',port=args.port,seconds=args.seconds,mode='diagnostic',remote_proxy=False,game_patch=False)),encoding='utf-8')

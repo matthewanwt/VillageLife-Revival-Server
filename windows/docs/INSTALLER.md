@@ -32,3 +32,46 @@ The legacy toolchain still assumes its root is writable (`play-settings.json`, `
 - Launch, stop, restart, save, restore, update and uninstall without changing existing saves.
 - Export Diagnostics support bundle; review for PII/secret leaks.
 - Windows security and licensing review prior to any general distribution.
+
+## New: isolated test installer build (2.11 instance management + missing-RPC reports)
+
+The source repository now includes `windows/installer/Build-TestInstaller.ps1`.
+It stages from a **clean extracted 2.11 player kit** into a new temporary folder,
+adds the current compatibility server from `legacy_reference/backend/`,
+overlays current `windows/tools/`, compiles the WinForms launcher, and invokes
+Inno Setup. **It never modifies the original player kit or live save.**
+
+On **Windows** with **.NET 10 SDK** and **Inno Setup 6** installed:
+
+```powershell
+.\windows\installer\Build-TestInstaller.ps1 -PlayerKitRoot "C:\VillageLife\clean-2.11-player-kit"
+```
+
+The supplied clean player kit must have `runtime/python/python.exe` and
+`runtime/dotnet/dotnet.exe`; it is needed only as the source of previously
+prepared redistributable runtimes. It need not include the original XAPK,
+player saves or game assets; the script does not copy them. Do **not** use the
+55 GB working folder as your staging directory.
+
+Result (after a successful Windows build):
+`windows/installer/output/VillageLife-TestSetup.exe`.
+The installer has a **separate test AppId and install folder** from old 2.11
+and does not overwrite the existing portable game installation.
+
+The launcher has an **Instance Manager** button to open BlueStacks' GUI for
+creating a dedicated Pie64 instance, explicit instance selection when multiple
+instances exist, and a persistent binding to the selected stable internal ID.
+It discovers the ADB port on every launch and does not auto-edit VM files.
+Creation cannot currently be automated using a documented supported BlueStacks CLI.
+
+The **Export Missing Requests** button creates an allowlisted, anonymised ZIP
+from the compatibility backend's 501 failures. This is not raw packet capture.
+It is safe for developer triage but still requires a user to review it before
+private sharing. Missing original game rules remain unimplemented.
+
+**Not yet validated:** Windows compilation, a Windows installer run, a clean
+BlueStacks first-run installation, game signing/startup, and Wi-Fi-on isolation.
+The current routing evidence for VLTest1 shows Android has an external IPv4
+route through `10.0.2.2`. Without a verified blocking policy, setup may
+correctly reject the guest. This test installer must not be promoted to a
+community release until the networking and gameplay acceptance checks pass.

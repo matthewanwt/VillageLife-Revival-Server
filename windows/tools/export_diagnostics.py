@@ -14,7 +14,7 @@ import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-SAFE_REPORTS = ("latest-runtime-error.json", "setup-network-check.json", "SETUP DIAGNOSTICS.json")
+SAFE_REPORTS = ("latest-runtime-error.json", "setup-network-check.json", "SETUP DIAGNOSTICS.json", "network-topology-report.json")
 SAFE_SESSION_REPORTS = ("network-check.json", "environment.json", "result.json")
 
 

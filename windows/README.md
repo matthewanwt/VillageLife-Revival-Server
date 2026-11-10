@@ -66,3 +66,58 @@ Use a copy of an existing 2.11 player installation. **Never use a real player's 
 Run checks in this order: (a) no BlueStacks, (b) correctly installed BlueStacks, (c) intentionally invalid/changed instance port, (d) slow/hung ADB, (e) port 80 occupied, (f) backend startup crash, (g) local guest route, (h) **Wi-Fi enabled with external guest probes**, (i) normal game launch/restart/save/stop. Check the Support ZIP before sharing it with developers.
 
 **Release criteria:** no full community release until a Windows test confirms the latest code boots the original APK and the Wi-Fi-on external isolation tests are passed. The source currently does **not** guarantee that result.
+
+## Latest Wi-Fi/instance mapping update (non-invasive diagnostic)
+
+The new `tools/diagnose_network.py` and `platforms/bluestacks/host_network.py`
+collect sanitised process, network adapter and connection categories on Windows
+without changing firewall rules or emulator settings. `tools/platforms/bluestacks/instances.py`
+now verifies `status.adb_port` against the configured ADB port; a mismatch fails
+with `VL-BS-PORT-DIVERGED`. The WinForms source has a **Network Check** button;
+`Export Diagnostics` can include the resulting redacted report.
+
+**No Wi-Fi isolation mechanism has been implemented or tested on a real BlueStacks VM.**
+See `docs/NETWORK_TOPOLOGY_DIAGNOSTICS.md` for exact commands, limitations and
+the dedicated-VM test sequence. These additions do not make the Alpha backend
+APK-compatible and do not constitute a compiled Windows installer.
+
+## 2.11 separate test-installer and unimplemented-RPC update
+
+- **Instance Manager** now opens `HD-MultiInstanceManager.exe` (BlueStacks' GUI)
+  for guided instance creation. VM management still uses `BstkVMMgr.exe` only
+  where the existing verified setup already did so. The launcher never chooses
+  between multiple instances without the player's explicit selection or a
+  previously verified ID. For VLTest1, that internal ID is `Pie64_4`, with
+  port `5595` at the time of the user's diagnostic.
+- **Export Missing Requests** invokes `tools/export_missing_requests.py`. The
+  instrumented 2.11 compatibility backend logs bounded metadata for unknown
+  endpoints, failed RPC services and explicit server errors, without raw
+  payloads. See `docs/MISSING_REQUEST_REPORTS.md`.
+- **Build-TestInstaller.ps1** generates a separate development-only installer
+  on Windows from a clean prior 2.11 player kit and the current source.
+  See `docs/INSTALLER.md`. The EXE has not been compiled or tested here.
+- Wi-Fi-on safety **is not yet fixed**. Android's route to external `1.1.1.1`
+  goes via `10.0.2.2` on the observed `VLTest1` environment. Existing
+  fail-closed checks remain in place; do not bypass them.
+
+## Stale BlueStacks selection guard (additional regression fix)
+
+The original 2.11 scripts sometimes silently selected a default instance when
+`play-settings.json` contained an outdated selection. The new play path **never
+uses a default VM or port**. It validates the selected internal ID, configured
+and live ADB port, BlueStacks installation location, and any previously saved
+human-readable display name. A missing/changed selection or unexpected rename
+is an actionable error, not permission to play on the default instance.
+`Set Up Game` explicitly lists the available instances and requires a user
+selection. No running VM or saved game is automatically changed by this guard.
+
+Current limitation: a deleted VM recreated with the *same* internal ID, port,
+name and installation path cannot be reliably distinguished using these fields
+alone. Add an independently verified VM identity receipt before promising
+complete reinstall detection. Do not rely on display names as unique IDs.
+
+Developer XAPK placement: `windows/VillageLife-Original.xapk` is accepted by
+these older tools because they search the `windows/` runtime root for a single
+`*.xapk`. `.gitignore` excludes XAPKs and `play-settings.json` from Git.
+The installer deliberately excludes game assets; player setup imports a
+user-provided XAPK separately.

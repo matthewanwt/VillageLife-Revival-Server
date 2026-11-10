@@ -1,27 +1,29 @@
 {
-  "scope": "Source-only Windows compatibility integration plus backend architecture alpha",
+  "scope": "2.11 modular backend alpha + Windows BlueStacks test integration",
+  "baseline_zip": "VillageLife_Revival_Server_2.11_WiFi_Topology_Update.zip",
   "includes_private_player_data": false,
   "includes_original_game_files": false,
+  "file_count": 211,
   "files": {
     ".env.example": {
       "sha256": "5c85c1dffd704cb82cec364be6d6adbba86fa5a341a44a8ac48887f7a4bab260",
       "bytes": 223
     },
     ".github/workflows/tests.yml": {
-      "sha256": "c15e3f71987aaf57358cbbea8a94a656999eb04489b753971b8bf2aafae5a4e6",
-      "bytes": 377
+      "sha256": "399ea3024fe83b3a5af9e2c3629d9e8d2fb92fc844d9ef6d11a597f716b1baac",
+      "bytes": 1024
     },
     ".gitignore": {
-      "sha256": "bb395e02e5c4bafd5265b3bdf04b3197b6a15e1999899ba9bdaab95d8d1129db",
-      "bytes": 781
+      "sha256": "8d244bc9290f69f6333d93d2bd9182261973471ac24fc13cbdc5a711c08cc502",
+      "bytes": 1076
     },
     "MIGRATION_MANIFEST.json": {
       "sha256": "0f9bc339942c13e59bbc10e75a3ad907186627b11c36f99048a866eea159691b",
       "bytes": 377
     },
     "README.md": {
-      "sha256": "54f7e2f64f802ce2ebd6e5d014db1314a63a5defef7700710a26d8d5ff265de6",
-      "bytes": 6997
+      "sha256": "6151359826f1625383b48de33ebe6fdf0f662a7ebca95118c098c0141d96ed16",
+      "bytes": 7842
     },
     "docs/API.md": {
       "sha256": "32faf2e96e950fcb5e1c210829262eb45bee7e1695f16a8d27b1c306b234f23c",
@@ -119,6 +121,10 @@
       "sha256": "eacf1b1d4d187a4b86919de4c84318c722d2a404cc53eea2af0cb1bc11652757",
       "bytes": 13432
     },
+    "legacy_reference/backend/missing_requests.py": {
+      "sha256": "ce440c6d9a21d01a0e79aeecad543757ae6b02875038d7c057d69ba9519d5eda",
+      "bytes": 6303
+    },
     "legacy_reference/backend/native_identity.py": {
       "sha256": "f1b0e1dbf4a2aaf8fc045a6ae0ec8f412cdba091c2f3ff63120064ec5920df78",
       "bytes": 4506
@@ -152,8 +158,8 @@
       "bytes": 14555
     },
     "legacy_reference/backend/server.py": {
-      "sha256": "e739d5f6ba89848c98c8e3d6c6bbb1c60dee8b5e5fa1891ec31fb77614921af8",
-      "bytes": 8947
+      "sha256": "cf73f944d0bfa4c56b5fff57570964d8975140b285a7589dac8f1ecb5962d865",
+      "bytes": 9349
     },
     "legacy_reference/backend/session.py": {
       "sha256": "697ce7bf4d1712cb9a061a9cd009071bc5535c1ee46f3c408ad3926ac2420123",
@@ -516,28 +522,48 @@
       "bytes": 1748
     },
     "windows/COMPATIBILITY_MANIFEST.json": {
-      "sha256": "644e99df15ef7582ae859f3fb2e64b712a6d8310d51d024df913503c1e30d101",
-      "bytes": 696
+      "sha256": "7b4be4fd086928b06d6803a9ec35de845685f26282b3096483ea10ef44065119",
+      "bytes": 1984
     },
     "windows/README.md": {
-      "sha256": "97946b1142fd74339c7931c9766148f2f9b0e6c9e0f0fd16f40d7aca65def55c",
-      "bytes": 5982
+      "sha256": "b6330d921a80ddc072e1d3d8cf0d1589b6b721ba481638d2a1046075ffddfaa6",
+      "bytes": 8053
+    },
+    "windows/docs/CHANGELOG_TEST_BUILD.md": {
+      "sha256": "66a08341198b9a57a3eb78a55a46f125a3df4bbcd95731cc6939ebf965f0d705",
+      "bytes": 2883
     },
     "windows/docs/INSTALLER.md": {
-      "sha256": "76fc94338dd97903e9a4e91e2619ebaf1c9a8974509db89b89e5557997f1a472",
-      "bytes": 3108
+      "sha256": "a8ddb9cf2972e3e6131cd3fd45416eba37d4f09ad2ab4f793ecb139732bc9b3e",
+      "bytes": 5509
+    },
+    "windows/docs/MISSING_REQUEST_REPORTS.md": {
+      "sha256": "0c04ae9037f54ad2a5dacb5049372b59004dac2a7c46a82d8d66def9a7bc4d97",
+      "bytes": 2622
+    },
+    "windows/docs/NETWORK_TOPOLOGY_DIAGNOSTICS.md": {
+      "sha256": "39777cf0a369a013f2a810bd285505bec0903fd1efd489aafb7396dc1e01ba2a",
+      "bytes": 5258
     },
     "windows/docs/WIFI_AND_ROUTING.md": {
       "sha256": "d556839235f99db2ea51e6e63e96f54ccf4fc22f89ab4d5f55dcd7bf9f7d228b",
       "bytes": 3647
     },
+    "windows/docs/WINDOWS_TEST_CHECKLIST.md": {
+      "sha256": "0f38801b382dccd05e2b0aedf8325e72c8ab3449a7bcc53387ba89f1ed1d7465",
+      "bytes": 2432
+    },
     "windows/installer/Build-Installer.ps1": {
-      "sha256": "ad732be103e5758d71f8920a82584e56177e187d881b09f1c0fe1f8a1b73774a",
-      "bytes": 2379
+      "sha256": "72c05beeec9b66e6c13622bb1a4dc5034cd13facfc4861133f91fd2ae88ad50b",
+      "bytes": 2585
+    },
+    "windows/installer/Build-TestInstaller.ps1": {
+      "sha256": "ca8e9a5e3dea578cd25dc4c5f6dd97bb8b55684f7dc8a98078408f6c172045e0",
+      "bytes": 4697
     },
     "windows/installer/VillageLife.iss": {
-      "sha256": "aa3dcff416661c20559f2156ec2c8e251b220be09e8670ca4976c438b54e2665",
-      "bytes": 2333
+      "sha256": "fff0f3f280a482d12368c86a58d14f55077fbd63e31f3a4f9ef37f814cb1da10",
+      "bytes": 2607
     },
     "windows/launcher/LocalApkSigner.cs": {
       "sha256": "3f634a2a8a1717f3c2129d9422f910f5190a9fba32ba1e7dc73ddb18ba3f3d6f",
@@ -548,8 +574,8 @@
       "bytes": 73
     },
     "windows/launcher/Program.cs": {
-      "sha256": "4a866f77395fa3b05d85e4003e65e313f24b8cf1da4f4c780bf4b6be713963ff",
-      "bytes": 13454
+      "sha256": "d946247810613b38031d95252edc7913460dec62f4da66f9f0da9ac2ba85e17f",
+      "bytes": 17313
     },
     "windows/launcher/VillageLifeLauncher.csproj": {
       "sha256": "5479954ff93e02d181faf2d910225af4b23721d5f8a283dbcc5c89692dafeb22",
@@ -587,9 +613,21 @@
       "sha256": "d0cec4ba13f2050846b3e1c1c1244faf3bdd63aa06d7625e37612295b39ce947",
       "bytes": 2160
     },
+    "windows/tests/test_instance_manager.py": {
+      "sha256": "6c45296d17f104094f12fbd7fd7259d202348157b8bf8552b6b24e0cd3520c62",
+      "bytes": 1899
+    },
+    "windows/tests/test_missing_requests.py": {
+      "sha256": "d738047281c64324b701a4bfc70b5917009e1f3b645bdc098f27b8694c91ca30",
+      "bytes": 7337
+    },
     "windows/tests/test_network_check.py": {
       "sha256": "066749929c57f3a3e0fb0dd3fd4eb7a49dd2f52de63a2c5e41274776ed777756",
       "bytes": 3420
+    },
+    "windows/tests/test_network_topology.py": {
+      "sha256": "c50c8e384aa814ab932c5035b06bc64886c6f6d758163d314f6f0bc653b8a6e4",
+      "bytes": 6737
     },
     "windows/tests/test_online_relay.py": {
       "sha256": "5a08fa8ed33edf4685fbc3132c470ae6432a17eae5fd3d000a7c4bc3d6c0b48d",
@@ -631,13 +669,21 @@
       "sha256": "5037e83faa69eb1a45a637667c4a26c2cefc25a1ff6ebce1ba6f7247c7b50adf",
       "bytes": 3298
     },
+    "windows/tools/diagnose_network.py": {
+      "sha256": "662f8c02aaef7769e673e5509cf02bf562eba416fb727c7015decf52df1107d2",
+      "bytes": 8190
+    },
     "windows/tools/diagnose_setup.py": {
       "sha256": "984dccd9117e28399e339f3905fc8c190f3fba945d916f1eb127e3dfbc4736af",
       "bytes": 3516
     },
     "windows/tools/export_diagnostics.py": {
-      "sha256": "58c6594003e0b7fbf0a47ae526512f223c81b161a796fcf1c0634d413f04fbe4",
-      "bytes": 5388
+      "sha256": "0f159c0507acc7313b2d220ab76dd63fd4a1922178d0a0e361f4884a37eaf67e",
+      "bytes": 5420
+    },
+    "windows/tools/export_missing_requests.py": {
+      "sha256": "27f381c75154e380905e3909066f6022606ba65b8c8ae8868dcf6aea996982a0",
+      "bytes": 4820
     },
     "windows/tools/feature_audit.py": {
       "sha256": "da83cd35d85e1a4ce4e9e13c4616999851a0b9ac95357e0c666795ecce169ae4",
@@ -687,6 +733,10 @@
       "sha256": "23590e2a9b042fde80bb2c01a54c82de3bb81440e2d6afe50e41012e9062bdb4",
       "bytes": 3161
     },
+    "windows/tools/open_instance_manager.py": {
+      "sha256": "bfa759a7216d4e8c41355c10829134b7da78f10433dabd58082643beb1647055",
+      "bytes": 347
+    },
     "windows/tools/organize_releases.py": {
       "sha256": "b8026cb2bd85efd38de4e9060c7fd21a28fff509f0348f1080a11fa458f0f0c0",
       "bytes": 3327
@@ -704,12 +754,20 @@
       "bytes": 3894
     },
     "windows/tools/platforms/bluestacks/discovery.py": {
-      "sha256": "d1c125751b9e790e3f2d99952b70cc4ccfba43a6825be0bc13c807c9ece6aeed",
-      "bytes": 2941
+      "sha256": "d16dde80fb551a8eea8afe6f2a92fe91140b6ca07a90d8a9309548a66b838dc8",
+      "bytes": 3131
+    },
+    "windows/tools/platforms/bluestacks/host_network.py": {
+      "sha256": "026b50322357e03eb39d742a2014d3934ecb1aa20603f78771c9883fe12e8b27",
+      "bytes": 7513
     },
     "windows/tools/platforms/bluestacks/instances.py": {
-      "sha256": "4bd350af94d5e1b2142ddaa666153b34081cdbbfea6cf1bc1123344864c5ccfe",
-      "bytes": 3801
+      "sha256": "ee3052b44deae6ed1a345c74d35c419aacd7b3269b9debccb27e43561ea0195a",
+      "bytes": 6739
+    },
+    "windows/tools/platforms/bluestacks/manager.py": {
+      "sha256": "cb33df00e57d3a280c1a43d2df82174fc2f34c707be1748502df79ff47b587e2",
+      "bytes": 2601
     },
     "windows/tools/platforms/bluestacks/net_assurance.py": {
       "sha256": "38c08ca4d3bb2b5551b0a0f5712756215dfdb5d905d967f56b15dc0c7b9379ce",
@@ -748,8 +806,8 @@
       "bytes": 2076
     },
     "windows/tools/setup_local.py": {
-      "sha256": "1b26c2a469233a26d7a81d961902daba094d219c321ae9b8fd8573cd366ec213",
-      "bytes": 7769
+      "sha256": "6987e07079bded6eaf47bf912972ae06078a5dbe088223e6c5aff1225f4b40a0",
+      "bytes": 7813
     },
     "windows/tools/stage_one_coverage.py": {
       "sha256": "15d27d4e31a1bf22ea16ba05d111acd3ed666bd1edce0b364b80363aaecb235a",

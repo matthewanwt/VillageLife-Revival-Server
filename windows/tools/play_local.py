@@ -12,7 +12,8 @@ from platforms.bluestacks.ports import require_client_port
 ROOT=Path(__file__).resolve().parents[1]
 ADB=Path(os.environ.get('ProgramFiles',r'C:\Program Files'))/'BlueStacks_nxt/HD-Adb.exe'  # resolved at launch
 SETTINGS=json.loads((ROOT/'play-settings.json').read_text(encoding='utf-8')) if (ROOT/'play-settings.json').exists() else {}
-INSTANCE=SETTINGS.get('instance','Pie64_1');SERIAL='127.0.0.1:'+str(SETTINGS.get('adb_port',5565))
+# Never assign a default VM or ADB endpoint before validating the saved binding.
+INSTANCE=None;SERIAL=None
 PLAYER=ADB.with_name('HD-Player.exe');PACKAGE='com.playdemic.villagelife.android'
 EXPECTED='8d25823b824ba766b38e53aedb74b270a0254e6bf3fbbcf1a858b090a66b5c08'
 FLAGS=getattr(subprocess,'CREATE_NO_WINDOW',0)

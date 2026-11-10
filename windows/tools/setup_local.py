@@ -65,7 +65,7 @@ def main():
  info=run([MANAGER,'showvminfo',instance,'--machinereadable'])
  if 'VMState="poweroff"' not in info:raise RuntimeError('Close the selected '+instance+' instance in Multi-instance Manager, then run setup again.')
  print('Target: '+instance+' / '+ascii(selected['name'])+'. No other instance will be changed.')
- if not args.yes:input('Press Enter to restrict this dedicated instance to local networking and install the private game copy, or Ctrl+C to cancel: ')
+ if not args.yes:input('Press Enter to configure NAT host routing and install this private game copy. NAT settings do not prove isolation; the guest egress checks must pass. Ctrl+C to cancel: ')
  if 'nic1="nat"' not in info:raise RuntimeError('Dedicated instance network adapter 1 must use NAT; setup will not replace another network configuration.')
  run([MANAGER,'modifyvm',instance,'--nat-bind-ip1=127.0.0.1','--nat-localhostreachable1=on'])
  network=inspect_network(instance)

@@ -44,6 +44,36 @@ class DiscoveryTests(unittest.TestCase):
                 validate_binding(settings,old,discover_mock_installation(Path(tmp)/'other'))
 
 
+
+    def test_deleted_instance_never_falls_back_to_default(self):
+        config = 'bst.instance.Pie64.display_name="Default"\nbst.instance.Pie64.adb_port="5555"\n'
+        with self.assertRaises(VillageRuntimeError) as caught:
+            select_instance(available_instances(config), 'Pie64_4')
+        self.assertEqual(caught.exception.code, 'VL-BS-INSTANCE-MISSING')
+
+    def test_renamed_instance_fails_with_specific_recovery_message(self):
+        config = 'bst.instance.Pie64_4.display_name="Renamed VM"\nbst.instance.Pie64_4.adb_port="5595"\n'
+        chosen = select_instance(available_instances(config), 'Pie64_4')
+        with tempfile.TemporaryDirectory() as tmp:
+            installation = discover_mock_installation(Path(tmp))
+            settings = {
+                'instance': 'Pie64_4', 'adb_port': 5595,
+                'instance_display_name': 'VLTest1',
+                'instance_binding': make_binding(chosen, installation),
+            }
+            with self.assertRaises(VillageRuntimeError) as caught:
+                validate_binding(settings, chosen, installation)
+            self.assertEqual(caught.exception.code, 'VL-BS-INSTANCE-RENAMED')
+
+    def test_stale_instance_port_fails_without_switching(self):
+        config = 'bst.instance.Pie64_4.display_name="VLTest1"\nbst.instance.Pie64_4.adb_port="5595"\n'
+        chosen = select_instance(available_instances(config), 'Pie64_4')
+        with tempfile.TemporaryDirectory() as tmp:
+            installation = discover_mock_installation(Path(tmp))
+            with self.assertRaises(VillageRuntimeError) as caught:
+                validate_binding({'instance': 'Pie64_4', 'adb_port': 5555}, chosen, installation)
+            self.assertEqual(caught.exception.code, 'VL-BS-INSTANCE-CHANGED')
+
 def discover_mock_installation(p):
     from platforms.bluestacks.discovery import BlueStacksInstallation
     return BlueStacksInstallation(p)
