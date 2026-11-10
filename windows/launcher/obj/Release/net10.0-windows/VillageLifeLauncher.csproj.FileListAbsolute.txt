@@ -1,0 +1,15 @@
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\bin\Release\net10.0-windows\VillageLifeLauncher.exe
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\bin\Release\net10.0-windows\VillageLifeLauncher.deps.json
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\bin\Release\net10.0-windows\VillageLifeLauncher.runtimeconfig.json
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\bin\Release\net10.0-windows\VillageLifeLauncher.dll
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\bin\Release\net10.0-windows\VillageLifeLauncher.pdb
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\obj\Release\net10.0-windows\VillageLifeLauncher.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\obj\Release\net10.0-windows\VillageLifeLauncher.AssemblyInfoInputs.cache
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\obj\Release\net10.0-windows\VillageLifeLauncher.AssemblyInfo.cs
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\obj\Release\net10.0-windows\VillageLifeLauncher.csproj.CoreCompileInputs.cache
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\obj\Release\net10.0-windows\VillageLifeLauncher.sourcelink.json
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\obj\Release\net10.0-windows\VillageLifeLauncher.dll
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\obj\Release\net10.0-windows\refint\VillageLifeLauncher.dll
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\obj\Release\net10.0-windows\VillageLifeLauncher.pdb
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\obj\Release\net10.0-windows\VillageLifeLauncher.genruntimeconfig.cache
+C:\Users\matti\Documents\Github\VillageLife-Revival-Server\windows\launcher\obj\Release\net10.0-windows\ref\VillageLifeLauncher.dll

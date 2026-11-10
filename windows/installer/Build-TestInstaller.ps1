@@ -1,3 +1,8 @@
+# RELEASE GATE: This installer MUST NOT ship until the original Android XAPK
+# is verified end-to-end against the NEW backend, local game resources, and
+# a working safe network policy on Windows. The old installer was API-only.
+throw '[VL-INSTALLER-NOT-READY] Full original-client gameplay, signed XAPK installation, guided BlueStacks setup, save upgrades and Wi-Fi isolation are not yet verified. The installer is intentionally blocked. See docs/REMAINING_GAMEPLAY.md.'
+
 # Builds a NEW BACKEND-ONLY Windows test installer. No 2.11 player kit required.
 # Run in PowerShell on Windows with Python/.venv + PyInstaller, .NET 10 SDK,
 # Inno Setup 6. All outputs are kept separate from the repository and old saves.
@@ -28,6 +33,7 @@ $pyWork = Join-Path $stage 'pyinstaller-work'
 $spec = Join-Path $stage 'spec'
 & $PythonPath -m PyInstaller --noconfirm --clean --onedir --console --name VillageLifeServer `
     --paths (Join-Path $repo 'src') --collect-submodules villagelife `
+    --add-data ((Join-Path $repo 'tools/prepare_original_client.py')+';tools') `
     --distpath $backendDist --workpath $pyWork --specpath $spec `
     (Join-Path $repo 'windows/installer/new_backend_entry.py')
 if ($LASTEXITCODE -ne 0) { throw 'New Python backend bundling failed' }

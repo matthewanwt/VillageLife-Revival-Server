@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import time
 
 
 class InstanceError(RuntimeError):
@@ -140,14 +141,22 @@ def adb_status(path: Path) -> dict:
     selected = verify_binding(path, list_instances(), root)
     serial = f'127.0.0.1:{selected.adb_port}'
     adb = root/'HD-Adb.exe'
-    try:
-        connected = subprocess.run([str(adb), 'connect', serial], capture_output=True, timeout=8)
-        probe = subprocess.run([str(adb), '-s', serial, 'get-state'], capture_output=True, timeout=8)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise InstanceError('VL-ADB-UNAVAILABLE', 'ADB connection failed or timed out') from exc
-    if connected.returncode or probe.returncode or probe.stdout.decode('utf-8','replace').strip() != 'device':
-        raise InstanceError('VL-ADB-NOT-READY', 'Selected instance is not connected. Start it and enable ADB.')
-    return {'instance': selected.id, 'adb_port': selected.adb_port, 'connected': True}
+    deadline = time.monotonic() + 45
+    command_failed = False
+    while time.monotonic() < deadline:
+        try:
+            connected = subprocess.run([str(adb), 'connect', serial], capture_output=True, timeout=6)
+            probe = subprocess.run([str(adb), '-s', serial, 'get-state'], capture_output=True, timeout=6)
+        except (OSError, subprocess.TimeoutExpired):
+            command_failed = True
+        else:
+            if (not connected.returncode and not probe.returncode and
+                    probe.stdout.decode('utf-8','replace').strip() == 'device'):
+                return {'instance': selected.id, 'adb_port': selected.adb_port, 'connected': True}
+        time.sleep(1)
+    if command_failed:
+        raise InstanceError('VL-ADB-UNAVAILABLE', 'ADB command failed or timed out while waiting for the selected instance')
+    raise InstanceError('VL-ADB-NOT-READY', 'Selected instance did not become ready. Check that it is running and ADB is enabled.')
 
 
 def open_manager() -> None:

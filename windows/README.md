@@ -1,29 +1,9 @@
-# Windows new-backend-only test manager
+# Windows integration status
 
-This module is **not the original Android game's launcher**. It is a developer UI for the NEW modular server and BlueStacks **instance diagnostics only**. The old 2.11 backend, local-play scripts, signing utilities and APK installer are intentionally absent. The game cannot run on this backend until the original binary login/process RPC is independently implemented.
+The repository contains a **new backend-only Windows development manager** and Inno Setup source, but **there is no tested, complete game installer yet**. The original APK-facing `/web/ClientService/Login` and `/web/ClientService/Process` endpoints are partially implemented in the independent backend. Full game behaviour is not.
 
-## Build on Windows (developer only)
+The Inno Setup build scripts deliberately stop with `VL-INSTALLER-NOT-READY` rather than releasing an incomplete installer. This is intentional, in accordance with the project requirement for a single finished installer rather than a partial test installer.
 
-```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e . pyinstaller
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\windows\installer\Build-TestInstaller.ps1
-```
+Already available for development: discover Pie64 instances, bind an exact internal ID, validate display name/ADB port/install-path changes, read-only network diagnostics, and standalone SQLite-backed new server. Missing: guided first-run instance creation/selection UI, targeted APK/OBB install, verified Windows binary build, all original gameplay, real save migration semantics, and a tested Wi-Fi-on isolation policy.
 
-Requires installed .NET 10 SDK and Inno Setup 6. Output in `windows\installer\output\VillageLife-NextBackend-TestSetup.exe`.
-
-PyInstaller creates `VillageLifeServer.exe` (NEW server) and Inno Setup packs that plus a self-contained .NET manager in a single installer. Python and .NET do **not** need to be installed on the testing machine. Proprietary game files, old server and player saves are excluded.
-
-**The build script has not been executed on Windows in this environment.** If it fails, preserve its exact error output so we can fix the build without touching the original 2.11 installation.
-
-## Test manager capabilities
-
-- Start/stop/check NEW `/health` HTTP API at 127.0.0.1:8765
-- List BlueStacks Pie64 VMs; bind an explicitly selected internal ID; detect stale VM/port/name/install path
-- Start and ADB-check the selected VM, and open official BlueStacks Multi-instance Manager GUI
-- Show read-only network metadata with an explicit `policy_verified: false`
-- Dry-run import of old saves using a selected source **copy**
-- Export missing-request summary and minimal support bundle
-
-Real import requires a deliberate CLI `--apply`, never an automatic UI action.
+Source: `windows/launcher/`, `windows/installer/`. Current operational and acceptance gaps: `docs/REMAINING_GAMEPLAY.md`. XAPK is a private local build input, not a Git or public release asset without appropriate distribution rights.

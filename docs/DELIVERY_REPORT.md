@@ -1,36 +1,30 @@
-# Delivery report | New-backend-only Alpha | 10 November 2026
+# Development handoff report | Independent original-client compatibility | 10 November 2026
 
-## Completed in uploaded source ZIP
+## Source status
 
-- Removed `legacy_reference/` (28 old source modules and 40 original tests), old backend/server launcher paths, old runtime/asset packaging scripts, and old Windows test scripts that depended on historical server data. No current executable or build script loads the 2.11 backend.
-- Rebuilt Windows packaging to use a PyInstaller **new** `villagelife` server executable and separate C# WinForms test manager; neither uses an old 2.11 runtime kit.
-- Fixed SQLite backup target connection leakage and read-only game catalogue connection disposal; updated catalogue fixture commit. Added backup cleanup and integrity-check regression tests.
-- Changed new database default to `%LOCALAPPDATA%\VillageLifeRevivalNext` to avoid original saves/installs. Stores instance bindings separately from accounts/game worlds.
-- Added exact BlueStacks instance-ID binding, per-instance ADB port discovery, mismatch/rename/install-path checks, no default fallback, and ADB check.
-- Added read-only network evidence report with explicit `policy_verified: false` and no firewall changes.
-- Added privacy-minimised `404/501` HTTP endpoint summary and export tool; unknown original APK calls return explicit error and do not call an old backend.
-- Added synthetic tests for separate 2.11-format profiles, multiple native villages, portable exports, extra unknown nested fields, import conflict detection, instance-switch prevention, and distinct independent SQLite databases.
-- Added a source-only release audit and safe dry-run archival utility for obsolete files in older Git checkouts.
-- Updated GitHub Actions to run Python tests on Linux and Windows and compile the C# test manager on a Windows runner.
+- New, standalone `src/villagelife` backend. The historical 2.11 `backend/` and `legacy_reference/` code are absent from the output and cannot be used as runtime fallbacks.
+- Transactional SQLite accounts, saves, session binding and one-way non-destructive legacy import.
+- Original compressed/XOR transport, original login and per-call process envelope, authentication and session rotation.
+- Original tutorial checkpoints, authored bridge into initial normal village, initial startup and area content, guarded initial Riverside/Mountain operations, limited deterministic source-derived work rules.
+- Optional local original-resource manifest/OBB read APIs and source-XAPK endpoint preparation helper; supplied original game bytes remain outside the output.
+- Strict BlueStacks instance ID selection, port validation and missing-request diagnostics. Network report is evidence only, not a network firewall.
+- No finished Windows game installer; both Inno Setup build scripts are intentionally gated until the requested end-to-end release is possible.
 
-## Verification completed in this environment
+## Verification performed
 
-- `PYTHONPATH=src python -m unittest discover -s tests -q`: **29 tests passed**.
-- `PYTHONPATH=src python tools/smoke_new_backend.py`: **passed** (real localhost HTTP process and throwaway SQLite DB).
-- `python tools/release_audit.py`: **passed**.
-- Python `compileall`: passed.
-- ZIP integrity and forbidden-item audit: checked during packaging.
+- **39 Python unit tests** in the new backend: passed in Linux container.
+- New API localhost HTTP smoke: passed on throwaway database.
+- Original-client-format wire/login/checkpoint/startup/initial-area HTTP smoke using actual extracted original game definitions: passed.
+- One-way import of a copied preserved old-format save: new backend login, tutorial/startup/area-content response, original player ID continuity and source SHA-256 preservation: passed.
+- Local original APK native library: four known endpoint constants patched in memory, with unchanged library length; original APK unchanged. Signed Android install was **not** verified.
 
-## Not completed / not claimed
+## Missing before a complete installer is honestly possible
 
-- .NET compilation and Inno Setup installer compilation require a Windows host and have **not** been run in this environment.
-- **Original APK is not playable with this new server**: binary login/process RPC and original gameplay rules are not implemented. No historical server fallback exists.
-- Migrated historical saves are opaque; the real 2.11 field mapping, game startup, building production, Riverside/Mountain behaviour and player save parity are not verified.
-- Wi-Fi-on network isolation remains unverified. Current Windows manager never starts the old client, changes firewall policy, or installs game assets.
-- Automatically creating BlueStacks VMs via unsupported internal APIs is not implemented. Use the official Multi-instance Manager GUI, then bind exactly one instance.
-- Exact-ID/name/port/path matching cannot guarantee a replaced VM has not reused all the same metadata. A stronger VM fingerprint requires validation on a real Windows installation.
-- Windows-only `WinError 32` and clean-upgrade/uninstall scenarios must still pass actual Windows tests.
+- Of 101 named historical operations, 55 lack new dispatch paths and 12 of the 44 existing dispatches are known to be partial. See `ORIGINAL_OPERATION_COVERAGE.md`.
+- Construction and building production, full quests/farming and family/social/marriage mechanics and Riverside/Mountain game parity remain incomplete.
+- No original-XAPK login/gameplay/save/reload acceptance performed on a real BlueStacks Windows VM.
+- No guided BlueStacks instance creation, signed APK/OBB targeting or self-contained playable setup proven on Windows.
+- No tested guest Wi-Fi-on external egress restriction; an IPv4 route towards the internet exists on the observed VLTest1.
+- Cross-machine, two-active-instance save transitions, real live 2.11 migration semantics, updates and uninstall preservation still require live test.
 
-## Next acceptance step
-
-Run the 29 tests on Windows Python 3.14, then `windows\installer\Build-TestInstaller.ps1`. Inspect the installer build stage, launch the NEW manager, start `/health`, test the separate `VLTest1` binding and ADB status, and import **copies only** of real 2.11 saves after a database backup. Do not invite real-player gameplay beta testing until original-client protocol and isolation are verified.
+**Do not distribute this source as a playable game release or copy the private game definitions/XAPK into a public repository.** Preserve the working 2.11 installation untouched. This source ZIP is an engineering handoff to finish and validate the new backend.

@@ -66,6 +66,17 @@ CREATE TABLE IF NOT EXISTS missing_requests (
   count INTEGER NOT NULL, last_seen INTEGER NOT NULL,
   PRIMARY KEY(method, endpoint_shape, response_status)
 );
+CREATE TABLE IF NOT EXISTS original_call_outcomes (
+  service_shape TEXT NOT NULL, response_code INTEGER NOT NULL, response_shape TEXT NOT NULL,
+  count INTEGER NOT NULL, last_seen INTEGER NOT NULL,
+  PRIMARY KEY(service_shape, response_code, response_shape)
+);
+CREATE TABLE IF NOT EXISTS original_call_request_outcomes (
+  service_shape TEXT NOT NULL, response_code INTEGER NOT NULL,
+  request_shape TEXT NOT NULL, response_shape TEXT NOT NULL,
+  count INTEGER NOT NULL, last_seen INTEGER NOT NULL,
+  PRIMARY KEY(service_shape, response_code, request_shape, response_shape)
+);
 CREATE TABLE IF NOT EXISTS metadata (
   key TEXT PRIMARY KEY, value TEXT NOT NULL
 );
@@ -84,6 +95,10 @@ class SqliteSaveRepository:
         with self.connect() as db:
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript(SCHEMA)
+            db.execute('''INSERT OR IGNORE INTO original_call_request_outcomes
+                          (service_shape,response_code,request_shape,response_shape,count,last_seen)
+                          SELECT service_shape,response_code,'object{}',response_shape,count,last_seen
+                          FROM original_call_outcomes''')
             row = db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()
             if row and row['value'] != '1':
                 raise RuntimeError('Unsupported database schema version: '+row['value'])

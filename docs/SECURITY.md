@@ -4,7 +4,7 @@
 - Do not run the original APK against this development API: the original binary RPC is missing and has no old-server fallback.
 - Installed game data and accounts live under `%LOCALAPPDATA%\VillageLifeRevivalNext`, not in Program Files, Git or BlueStacks images. Uninstalling a test manager does not erase player saves.
 - No installer build includes XAPK/APK/OBB, actual player saves, credentials, or original server source.
-- Missing-request aggregation stores only a fixed allowlist of endpoint names, or otherwise counts path segments. It never writes request bodies, headers, query strings, IP addresses or player identities to the exported report.
+- Missing-request aggregation stores RPC names and JSON key/type shapes only. It never writes request values or bodies, headers, query strings, IP addresses, call IDs, session tokens, save contents or player identities to the exported report.
 - Export diagnostics before sharing and review locally; report labels intentionally state that network isolation is not verified.
 - Guest Wi-Fi isolation must be established using enforced, revocable, instance-scoped policy and TCP/UDP/DNS/IPv6 tests before broader testing. A configured BlueStacks NAT address is not sufficient.
 - BlueStacks instance binding uses explicit internal IDs, checks live ADB port and saved installation and display-name hints; it never falls back to an unrelated instance.

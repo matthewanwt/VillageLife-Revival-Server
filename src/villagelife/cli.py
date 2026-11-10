@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 from villagelife.core.model import empty_native_village
 from villagelife.persistence.sqlite_store import SqliteSaveRepository
@@ -38,6 +40,10 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser('import-portable'); a.add_argument('owner_id'); a.add_argument('archive', type=Path)
     a = sub.add_parser('backup-db'); a.add_argument('output', type=Path)
     a = sub.add_parser('serve'); a.add_argument('--port', type=int, default=8765)
+    a.add_argument('--game-tables', type=Path, help='Enable original-client RPC using user-extracted game definitions')
+    a.add_argument('--xapk', type=Path, help='User-supplied original XAPK to read the original manifest')
+    a.add_argument('--obb', type=Path, help='User-supplied OBB for original resource responses')
+    a.add_argument('--inventory', type=Path, help='Resource-offset inventory for the OBB')
     sub.add_parser('list-instances')
     a = sub.add_parser('bind-instance'); a.add_argument('instance_id')
     sub.add_parser('verify-instance')
@@ -46,7 +52,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser('open-instance-manager')
     sub.add_parser('export-missing-requests')
     sub.add_parser('network-report')
+    sub.add_parser('verify-network')
     a = sub.add_parser('export-support'); a.add_argument('output', type=Path)
+    a = sub.add_parser('install-prepared-client'); a.add_argument('--apk', type=Path, required=True); a.add_argument('--obb', type=Path, required=True); a.add_argument('--replace', action='store_true')
+    sub.add_parser('check-original-game')
+    a = sub.add_parser('probe-guest-backend'); a.add_argument('--port', type=int, default=80)
+    sub.add_parser('launch-original-game')
+    a = sub.add_parser('prepare-original-client'); a.add_argument('--xapk', type=Path, required=True); a.add_argument('--output', type=Path, required=True)
 
     args = parser.parse_args(argv)
     binding = default_db().parent/'bluestacks-binding.json'
@@ -66,9 +78,44 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == 'network-report':
         from villagelife.platforms.network import report
         print(json.dumps(report(binding), indent=2)); return 0
+    if args.command == 'verify-network':
+        from villagelife.platforms.network import report
+        print(json.dumps(report(binding, guest_checks=True), indent=2)); return 0
     if args.command == 'export-support':
         from villagelife.support import export_support
         print('Created:', export_support(args.output, binding)); return 0
+    if args.command == 'install-prepared-client':
+        from villagelife.platforms.original_client import install_prepared
+        install_prepared(binding, args.apk, args.obb, replace=args.replace); print('Prepared client installed in the explicitly bound instance'); return 0
+    if args.command == 'check-original-game':
+        from villagelife.platforms.original_client import existing_installation
+        print(json.dumps({'package': 'com.playdemic.villagelife.android', 'installed': existing_installation(binding)})); return 0
+    if args.command == 'probe-guest-backend':
+        from villagelife.platforms.original_client import probe_local_server
+        probe_local_server(binding, args.port); print('Guest can reach the local backend (isolation remains unverified)'); return 0
+    if args.command == 'launch-original-game':
+        from villagelife.platforms.original_client import launch
+        launch(binding); print('Village Life launch requested'); return 0
+    if args.command == 'prepare-original-client':
+        # The preparation tool is deliberately a separate executable module so
+        # signing code is never imported by the normal server process.
+        if getattr(sys, 'frozen', False):
+            script = Path(getattr(sys, '_MEIPASS')) / 'tools' / 'prepare_original_client.py'
+        else:
+            script = Path(__file__).resolve().parents[2] / 'tools' / 'prepare_original_client.py'
+        if not script.is_file():
+            raise FileNotFoundError('Client preparation component is unavailable in this build')
+        import runpy
+        saved = sys.argv
+        try:
+            sys.argv = [str(script), '--xapk', str(args.xapk), '--output', str(args.output)]
+            try:
+                runpy.run_path(str(script), run_name='__main__')
+            except SystemExit as exc:
+                return int(exc.code or 0)
+        finally:
+            sys.argv = saved
+        return 0
     repo = SqliteSaveRepository(args.db)
     if args.command == 'export-missing-requests':
         from villagelife.support import export_missing
@@ -104,7 +151,17 @@ def main(argv: list[str] | None = None) -> int:
         if not 1 <= args.port <= 65535:
             parser.error('Port must be between 1 and 65535')
         from villagelife.transport.http_api import serve
-        serve(repo, args.port)
+        original = assets = None
+        if args.game_tables:
+            from villagelife.protocol.original_client.catalog import OriginalDefinitions
+            from villagelife.protocol.original_client.services import OriginalClientGame
+            from villagelife.protocol.original_client.assets import ClientAssets
+            original = OriginalClientGame(repo, OriginalDefinitions(args.game_tables))
+            if args.xapk or args.obb or args.inventory:
+                assets = ClientAssets(xapk=args.xapk, obb=args.obb, inventory=args.inventory)
+        elif args.xapk or args.obb or args.inventory:
+            parser.error('--game-tables is required with original game resources')
+        serve(repo, args.port, original=original, assets=assets)
     return 0
 
 
@@ -121,6 +178,9 @@ def run(argv: list[str] | None = None) -> int:
         return 2
     except OSError as exc:
         print('[VL-IO-ERROR] Could not access a required file or service ('+type(exc).__name__+').', file=__import__('sys').stderr)
+        return 3
+    except subprocess.CalledProcessError:
+        print('[VL-CLIENT-SIGNING-FAILED] The local Android signing tool rejected the prepared client. Check the selected JDK and retry.', file=__import__('sys').stderr)
         return 3
 
 

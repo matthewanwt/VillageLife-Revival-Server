@@ -1,3 +1,5 @@
+throw '[VL-INSTALLER-NOT-READY] Full gameplay installer gate not satisfied. Do not build a partial EXE. See docs/REMAINING_GAMEPLAY.md.'
+
 # Compile a staged NEW-backend-only test manager into one installer using Inno Setup.
 [CmdletBinding()]
 param([Parameter(Mandatory=$true)][string]$StageFolder, [string]$IsccPath='')

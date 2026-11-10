@@ -19,6 +19,7 @@ from villagelife.services.dispatcher import ActionDispatcher
 from villagelife.services.jobs import WorldTickCoordinator
 from villagelife.core.clock import SystemClock
 from villagelife.support import record_missing
+from villagelife.protocol.legacy_codec import decode as original_decode, encode as original_encode
 
 LOG = logging.getLogger(__name__)
 MAX_REQUEST = 1 * 1024 * 1024
@@ -31,9 +32,11 @@ class ApiServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address, repo: SqliteSaveRepository):
+    def __init__(self, address, repo: SqliteSaveRepository, original=None, assets=None):
         super().__init__(address, ApiHandler)
         self.repo = repo
+        self.original = original
+        self.assets = assets
         self.tokens = AccountTokens(repo)
         self.dispatcher = ActionDispatcher.safe_default(repo)
         self.ticks = WorldTickCoordinator(repo, SystemClock())
@@ -44,8 +47,13 @@ class ApiHandler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
 
     def log_message(self, fmt: str, *args) -> None:
-        # Never include bearer tokens, body contents or private account data.
-        LOG.info('%s %s', self.client_address[0], fmt % args)
+        # BaseHTTPRequestHandler's default request log includes the FULL URL,
+        # including any secret query parameters. Log only method and HTTP status;
+        # no device IDs, tokens, IPs, paths, request bodies or response contents.
+        status = str(args[1]) if fmt.startswith('\"%s\" %s') and len(args) > 1 else 'unknown'
+        if not status.isdecimal():
+            status = 'unknown'
+        LOG.info('client_http method=%s status=%s', self.command, status)
 
     def _json(self, status: int, data: dict[str, Any]) -> None:
         payload = json.dumps(data, ensure_ascii=False, allow_nan=False).encode('utf-8')
@@ -92,6 +100,8 @@ class ApiHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             path = urlsplit(self.path).path
+            if self.server.original and path != '/health' and not path.startswith('/v1/'):
+                return self._original_get(path)
             if path == '/health':
                 return self._json(200, {'ok': True, 'service': 'villagelife-revival-server', 'api': 1})
             if path.startswith('/web/'):
@@ -112,6 +122,8 @@ class ApiHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             path = urlsplit(self.path).path
+            if self.server.original and path in {'/web/ClientService/Login', '/web/ClientService/Process'}:
+                return self._original_post(path)
             if path.startswith('/web/'):
                 self._record_missing('POST', path, 501)
                 # The unimplemented binary client may have sent an unread body.
@@ -156,6 +168,70 @@ class ApiHandler(BaseHTTPRequestHandler):
         return {'id': snap.village_id, 'format': snap.format,
                 'schemaVersion': snap.schema_version, 'revision': snap.revision}
 
+
+    def _binary(self, status: int, body: bytes, mime: str = 'application/octet-stream') -> None:
+        self.send_response(status)
+        self.send_header('Content-Type', mime)
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control','no-store')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _original_get(self, path: str) -> None:
+        # Original resources are never fetched from external servers.
+        from urllib.parse import unquote
+        path=unquote(path)
+        if '..' in path.split('/') or '\\' in path:
+            return self._binary(400,b'Invalid path','text/plain')
+        if path.endswith('/envvars.txt'):
+            return self._binary(200,b'preservation_local=1\r\n','text/plain')
+        if path.endswith('/foldername.txt'):
+            return self._binary(200,b'foldernamea=local/\r\nfoldernamek=local/\r\n','text/plain')
+        assets=self.server.assets
+        if path.endswith('/origmanifest.xml') and assets and assets.manifest:
+            return self._binary(200,assets.manifest,'application/xml')
+        if path.endswith('/quikmanifest.xml') and assets and assets.manifest:
+            return self._binary(200,assets.manifest.split(b'>',1)[0]+b'></manifest>','application/xml')
+        if assets:
+            payload=assets.content(path)
+            if payload is not None:return self._binary(200,payload)
+        self._record_missing('GET',path,404)
+        return self._binary(404,b'<HTML>Not implemented</HTML>','text/html')
+
+    def _original_post(self, path: str) -> None:
+        n=self.headers.get('Content-Length','')
+        if not n.isdecimal() or not 0<int(n)<=8*1024*1024:
+            self.close_connection=True
+            return self._binary(400,b'Invalid request length','text/plain')
+        try:
+            request,mode=original_decode(self.rfile.read(int(n)))
+        except (ValueError,UnicodeError,TypeError):
+            self.close_connection=True
+            return self._binary(400,b'Unrecognised original request encoding','text/plain')
+        try:
+            if path.endswith('/Login'):
+                response=self.server.original.login(request)
+            else:
+                response=self.server.original.process(request)
+            return self._binary(200,original_encode(response,compressed=mode=='zlib-xor'))
+        except (ValueError, KeyError, TypeError) as exc:
+            LOG.info('Rejected original-client request: %s',type(exc).__name__)
+            return self._binary(400,b'Invalid original-client request','text/plain')
+        except Exception:
+            if path.endswith('/Process') and isinstance(request, dict):
+                calls = request.get('data', {}).get('calls', []) if isinstance(request.get('data'), dict) else []
+                if isinstance(calls, list):
+                    for call in calls:
+                        service = call.get('service') if isinstance(call, dict) else None
+                        if isinstance(service, str):
+                            try:
+                                from villagelife.support import record_original_call
+                                record_original_call(self.server.repo, service, 500)
+                            except Exception:
+                                pass
+            LOG.exception('Original-client service failed')
+            return self._binary(500,b'Original-client service error','text/plain')
+
     def _fail(self, error: Exception) -> None:
         if isinstance(error, PermissionError):
             return self._json(401, {'error': str(error)})
@@ -174,7 +250,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         return self._json(500, {'error': 'Internal server error'})
 
 
-def serve(repo: SqliteSaveRepository, port: int = 8765) -> None:
-    with ApiServer(('127.0.0.1', port), repo) as server:
+def serve(repo: SqliteSaveRepository, port: int = 8765, *, original=None, assets=None) -> None:
+    with ApiServer(('127.0.0.1', port), repo, original, assets) as server:
         LOG.info('Village Life new API listening on 127.0.0.1:%d', port)
         server.serve_forever(poll_interval=0.2)

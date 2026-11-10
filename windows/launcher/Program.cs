@@ -1,138 +1,55 @@
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
-using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace VillageLife;
+internal static class Program { [STAThread] static void Main() { ApplicationConfiguration.Initialize(); Application.Run(new VillageLifeWindow()); } }
 
-internal static class Program {
-    [STAThread]
-    static void Main() {
-        ApplicationConfiguration.Initialize();
-        Application.Run(new ManagerWindow());
+public sealed class VillageLifeWindow : Form {
+    sealed class Settings { public string GameTables { get; set; }=""; public string Xapk { get; set; }=""; public string Inventory { get; set; }=""; public string? Obb { get; set; } public int Port { get; set; }=80; public bool ClientPrepared { get; set; } }
+    readonly string root=Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName??AppContext.BaseDirectory;
+    readonly string state=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"VillageLifeRevivalNext");
+    readonly TextBox output=new(){Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill,Font=new Font("Consolas",10),WordWrap=false};
+    readonly FlowLayoutPanel bar=new(){Dock=DockStyle.Top,Height=94,AutoScroll=true,WrapContents=true,Padding=new Padding(6)};
+    readonly Label stage=new(){Dock=DockStyle.Bottom,Height=25,Padding=new Padding(8,4,0,0),Text="Ready — choose Set Up Game on first use."};
+    readonly ProgressBar progress=new(){Dock=DockStyle.Bottom,Height=16,Minimum=0,Maximum=100,Value=0};
+    readonly HttpClient http=new(){Timeout=TimeSpan.FromSeconds(4)}; readonly List<Button> actions=new(); Process? backend; bool closing,busy;
+    string ServerExe=>Path.Combine(root,"bin","VillageLifeServer","VillageLifeServer.exe"); string SettingsFile=>Path.Combine(state,"launcher-settings.json");
+    string PrivateAssets=>Path.Combine(root,"private-assets");
+    public VillageLifeWindow() {
+        Text="Village Life Revival";Width=960;Height=660;MinimumSize=new(760,480);StartPosition=FormStartPosition.CenterScreen;Controls.Add(output);Controls.Add(stage);Controls.Add(progress);Controls.Add(bar);
+        Add("Play / Restart",Play);Add("Stop",Stop);Add("Set Up Game",Setup);Add("Connection",Connection);Add("Save Backups",OpenData);Add("Logs",OpenData);Add("Help",Help);Add("Advanced diagnostics",Diagnostics);
+        FormClosing+=async(_,e)=>{if(!closing&&backend is {HasExited:false}){e.Cancel=true;closing=true;await Stop();Close();}};
+        Log("Independent new-backend launcher. First use: Set Up Game.");Log("Player data and private prepared files live in Local AppData, outside the installation folder.");if(!File.Exists(ServerExe))Log("[VL-BUILD-INCOMPLETE] Bundled server missing: "+ServerExe);
     }
-}
-
-public sealed class ManagerWindow : Form {
-    readonly string root = Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName ?? AppContext.BaseDirectory;
-    readonly TextBox output = new() {Multiline=true, ReadOnly=true, ScrollBars=ScrollBars.Vertical,
-        Dock=DockStyle.Fill, Font=new Font("Consolas", 10), WordWrap=false};
-    readonly FlowLayoutPanel bar = new() {Dock=DockStyle.Top, Height=132, AutoScroll=true, WrapContents=true};
-    readonly HttpClient http = new() {Timeout=TimeSpan.FromSeconds(3)};
-    Process? backend;
-    bool closing;
-    string ServerExe => Path.Combine(root, "bin", "VillageLifeServer", "VillageLifeServer.exe");
-
-    public ManagerWindow() {
-        Text="Village Life Revival | New Backend Test Manager"; Width=940; Height=660;
-        StartPosition=FormStartPosition.CenterScreen;
-        Controls.Add(output); Controls.Add(bar);
-        Add("Start new backend", async()=>await StartBackend());
-        Add("Stop backend", async()=>await StopBackend());
-        Add("Check API", async()=>await HealthCheck());
-        Add("Select BlueStacks instance", async()=>await ChooseInstance());
-        Add("Verify selection", async()=>await RunTool("verify-instance"));
-        Add("Start selected instance", async()=>await RunTool("start-instance"));
-        Add("Check ADB", async()=>await RunTool("adb-check"));
-        Add("Network diagnostics", async()=>await RunTool("network-report"));
-        Add("Open instance manager", async()=>await RunTool("open-instance-manager"));
-        Add("Dry-run save migration", async()=>await DryRunMigration());
-        Add("Export missing requests", async()=>await RunTool("export-missing-requests"));
-        Add("Export support report", async()=>await ExportSupport());
-        Add("About game compatibility", async()=>{ Log("[VL-PROTOCOL-NOT-READY] This NEW backend exposes /v1, not the original APK's binary ClientService protocol. Original APK play is disabled in this test manager. No old backend fallback exists."); await Task.CompletedTask; });
-        FormClosing += async (_, e) => {if(!closing && backend is {HasExited:false}) {e.Cancel=true; closing=true; await StopBackend(); Close();}};
-        Log("New-backend-only test manager. No legacy 2.11 executable, fallback, bundled XAPK or auto-migration.");
-        Log("Data lives in %LOCALAPPDATA%\\VillageLifeRevivalNext, outside the installation folder.");
-        if (!File.Exists(ServerExe)) Log("[VL-BUILD-INCOMPLETE] Missing bundled server: "+ServerExe);
+    void Add(string name,Func<Task> action){var b=new Button{Text=name,Width=150,Height=35,Margin=new Padding(4)};b.Click+=async(_,_)=>{if(busy){Log("Please wait for the current step to finish.");return;}busy=true;foreach(var item in actions)item.Enabled=false;try{await action();}catch(OperationCanceledException){SetStage(progress.Value,"Cancelled — choose an action when ready.");}catch(Exception e){SetStage(progress.Value,"Could not complete — see the message below.");Log("[VL-TOOL-FAILED] "+e.Message);}finally{busy=false;if(!IsDisposed)foreach(var item in actions)item.Enabled=true;}};actions.Add(b);bar.Controls.Add(b);}
+    void Log(string value){if(IsDisposed)return;if(InvokeRequired){BeginInvoke(()=>Log(value));return;}output.AppendText(DateTime.Now.ToString("HH:mm:ss")+"  "+value+Environment.NewLine);}
+    void SetStage(int value,string text){if(IsDisposed)return;if(InvokeRequired){BeginInvoke(()=>SetStage(value,text));return;}progress.Value=Math.Clamp(value,0,100);stage.Text=text;}
+    Settings Read(){try{return JsonSerializer.Deserialize<Settings>(File.ReadAllText(SettingsFile))??new();}catch{return new();}}
+    void Write(Settings s){Directory.CreateDirectory(state);var pending=SettingsFile+".pending";File.WriteAllText(pending,JsonSerializer.Serialize(s,new JsonSerializerOptions{WriteIndented=true}));File.Move(pending,SettingsFile,true);}
+    ProcessStartInfo Command(params string[] args){if(!File.Exists(ServerExe))throw new FileNotFoundException("Bundled new backend missing",ServerExe);var p=new ProcessStartInfo(ServerExe){WorkingDirectory=root,UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true,CreateNoWindow=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};foreach(var a in args)p.ArgumentList.Add(a);p.Environment["PYTHONUTF8"]="1";return p;}
+    async Task<(int,string,string)> Once(int seconds,params string[] args){using var p=Process.Start(Command(args))??throw new IOException("Could not start backend tool");var o=p.StandardOutput.ReadToEndAsync();var e=p.StandardError.ReadToEndAsync();using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(seconds));try{await p.WaitForExitAsync(deadline.Token);}catch(OperationCanceledException){p.Kill(true);throw new TimeoutException("[VL-TOOL-TIMEOUT]");}return(p.ExitCode,await o,await e);}
+    async Task Tool(params string[] args){var r=await Once(300,args);if(!string.IsNullOrWhiteSpace(r.Item2))Log(r.Item2.Trim());if(r.Item1!=0)throw new InvalidOperationException(string.IsNullOrWhiteSpace(r.Item3)?"[VL-TOOL-ERROR] Tool failed":r.Item3.Trim());}
+    async Task ToolQuiet(params string[] args){var r=await Once(300,args);if(r.Item1!=0)throw new InvalidOperationException(string.IsNullOrWhiteSpace(r.Item3)?"[VL-TOOL-ERROR] Tool failed":r.Item3.Trim());}
+    bool Ready(Settings s)=>File.Exists(s.GameTables)&&File.Exists(s.Xapk)&&File.Exists(s.Inventory)&&File.Exists(s.Obb)&&s.ClientPrepared;
+    void UsePrivateAssets(Settings s){
+        var xapks=Directory.Exists(PrivateAssets)?Directory.GetFiles(PrivateAssets,"*.xapk"):Array.Empty<string>();
+        if(xapks.Length!=1)throw new InvalidOperationException("[VL-ASSETS-XAPK] Private bundle must contain exactly one XAPK.");
+        s.GameTables=Path.Combine(PrivateAssets,"game_tables.sqlite");s.Xapk=xapks[0];s.Inventory=Path.Combine(PrivateAssets,"obb_tcf.inventory.csv");s.Obb=Path.Combine(PrivateAssets,"main.241.com.playdemic.villagelife.android.obb");
+        if(!File.Exists(s.GameTables)||!File.Exists(s.Inventory)||!File.Exists(s.Obb))throw new InvalidOperationException("[VL-ASSETS-MISSING] private-assets is incomplete. Expected game_tables.sqlite, obb_tcf.inventory.csv, and main.241.com.playdemic.villagelife.android.obb.");
     }
-
-    void Add(string caption, Func<Task> action) {
-        var b = new Button {Text=caption, Width=173, Height=35, Margin=new Padding(6,5,3,3)};
-        b.Click+=async(_,_)=>{b.Enabled=false; try {await action();} catch(Exception ex){Log("[VL-TOOL-FAILED] "+ex.GetType().Name+": "+ex.Message);} finally {if(!IsDisposed)b.Enabled=true;}};
-        bar.Controls.Add(b);
-    }
-    void Log(string line) {
-        if(IsDisposed) return;
-        if(InvokeRequired) {try{BeginInvoke(()=>Log(line));}catch(InvalidOperationException){} return;}
-        output.AppendText(DateTime.Now.ToString("HH:mm:ss")+"  "+line+Environment.NewLine);
-    }
-    ProcessStartInfo Command(params string[] args) {
-        if(!File.Exists(ServerExe)) throw new FileNotFoundException("Bundled NEW backend missing. Rebuild test installer",ServerExe);
-        var info = new ProcessStartInfo(ServerExe) {WorkingDirectory=root,UseShellExecute=false,
-            RedirectStandardOutput=true,RedirectStandardError=true,CreateNoWindow=true,
-            StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};
-        foreach(var arg in args) info.ArgumentList.Add(arg);
-        info.Environment["PYTHONIOENCODING"]="utf-8:replace";
-        info.Environment["PYTHONUTF8"]="1";
-        return info;
-    }
-    async Task<(int code,string stdout,string stderr)> CommandOnce(int timeoutSeconds,params string[] args) {
-        using var process=Process.Start(Command(args)) ?? throw new IOException("Unable to launch backend tool");
-        var stdout=process.StandardOutput.ReadToEndAsync();
-        var stderr=process.StandardError.ReadToEndAsync();
-        using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-        try{await process.WaitForExitAsync(deadline.Token);}
-        catch(OperationCanceledException){process.Kill(entireProcessTree:true);await process.WaitForExitAsync();throw new TimeoutException("[VL-TOOL-TIMEOUT] Tool exceeded "+timeoutSeconds+" seconds");}
-        return (process.ExitCode,await stdout,await stderr);
-    }
-    async Task RunTool(params string[] args) {
-        var (code, stdout, stderr)=await CommandOnce(30,args);
-        if(stdout.Trim().Length>0) Log(stdout.Trim());
-        if(code!=0) Log("[VL-TOOL-ERROR] "+stderr.Trim());
-    }
-    async Task StartBackend() {
-        if(backend is {HasExited:false}){Log("[VL-SERVER-ALREADY-RUNNING] Backend is already running");return;}
-        backend=Process.Start(Command("serve","--port","8765")) ?? throw new IOException("Unable to start new backend");
-        var proc=backend;
-        _=Task.Run(async()=>{try{while(await proc.StandardOutput.ReadLineAsync() is string line)Log(line);}catch(IOException){}});
-        _=Task.Run(async()=>{try{while(await proc.StandardError.ReadLineAsync() is string line)Log(line);}catch(IOException){}});
-        _=Task.Run(async()=>{await proc.WaitForExitAsync();Log("[VL-SERVER-EXIT] New backend exited with code "+proc.ExitCode);});
-        await Task.Delay(600);
-        await HealthCheck();
-    }
-    async Task StopBackend(){
-        var proc=backend; if(proc is null || proc.HasExited){Log("Backend is not running");return;}
-        try{proc.Kill(entireProcessTree:true); await proc.WaitForExitAsync();Log("New backend stopped");}
-        catch(Exception ex){Log("[VL-SERVER-STOP-FAILED] "+ex.Message);}
-    }
-    async Task HealthCheck(){
-        try{var response=await http.GetAsync("http://127.0.0.1:8765/health");Log("New API status: "+(int)response.StatusCode+" "+await response.Content.ReadAsStringAsync());}
-        catch(HttpRequestException){Log("[VL-SERVER-OFFLINE] New backend is not responding on 127.0.0.1:8765");}
-        catch(TaskCanceledException){Log("[VL-SERVER-TIMEOUT] New backend health check timed out");}
-    }
-    sealed record InstanceOption(string id,string display_name,int adb_port,int? live_adb_port);
-    async Task ChooseInstance() {
-        var (code,stdout,stderr)=await CommandOnce(20,"list-instances");
-        if(code!=0) {Log("[VL-BS-LIST-FAILED] "+stderr.Trim());return;}
-        var options=JsonSerializer.Deserialize<InstanceOption[]>(stdout) ?? Array.Empty<InstanceOption>();
-        if(options.Length==0){Log("[VL-BS-NO-PIE64] No Pie64 instance found. Open BlueStacks Multi-instance Manager first.");return;}
-        using var dialog=new Form {Text="Choose dedicated Village Life instance",Width=640,Height=230,StartPosition=FormStartPosition.CenterParent};
-        var combo=new ComboBox {Left=20,Top=60,Width=580,DropDownStyle=ComboBoxStyle.DropDownList};
-        combo.Items.AddRange(Array.ConvertAll(options, x => (object)$"{x.display_name} [{x.id}]  ADB {x.adb_port}"));
-        var btn=new Button {Text="Bind exact instance",Left=395,Top=113,Width=205,DialogResult=DialogResult.OK,Enabled=false};
-        combo.SelectedIndexChanged+=(_,_)=>btn.Enabled=combo.SelectedIndex>=0;
-        dialog.Controls.AddRange(new Control[]{new Label {Text="Select explicitly. No silent fallback to the default instance.",Left=20,Top=20,Width=580},combo,btn});
-        if(dialog.ShowDialog(this)!=DialogResult.OK || combo.SelectedIndex<0) return;
-        Log("Binding selected instance "+options[combo.SelectedIndex].id);
-        await RunTool("bind-instance",options[combo.SelectedIndex].id);
-    }
-    async Task DryRunMigration(){
-        using var pick=new FolderBrowserDialog {Description="Select a COPY of your old 2.11 backend/private_state folder. This is dry-run only."};
-        if(pick.ShowDialog(this)!=DialogResult.OK)return;
-        await RunTool("import-legacy", pick.SelectedPath);
-        Log("Dry run finished. Nothing in the selected old saves was changed; no new import was applied.");
-    }
-    async Task ExportSupport(){
-        using var save=new SaveFileDialog {Filter="ZIP file (*.zip)|*.zip",FileName="villagelife-support.zip"};
-        if(save.ShowDialog(this)!=DialogResult.OK)return;
-        await RunTool("export-support",save.FileName);
-        Log("Inspect the report before sharing. Saves, request bodies, and credentials are excluded.");
-    }
+    async Task Setup(){SetStage(5,"Setup: choosing your dedicated BlueStacks instance…");await BindInstance();var s=Read();UsePrivateAssets(s);
+        if(MessageBox.Show(this,"The original XAPK is not changed. A separately signed copy and OBB will be installed only in the bound instance. Continue?","Prepare private client",MessageBoxButtons.OKCancel,MessageBoxIcon.Warning)!=DialogResult.OK)return;SetStage(12,"Setup: starting the selected BlueStacks instance and waiting for ADB…");await ToolQuiet("start-instance");await ToolQuiet("adb-check");
+        var privateClient=Path.Combine(state,"private-client");SetStage(20,"Setup: preparing a private game copy (this can take a few minutes)…");await ToolQuiet("prepare-original-client","--xapk",s.Xapk,"--output",privateClient);var apk=Path.Combine(privateClient,"client-local-signed.apk");if(!File.Exists(apk))throw new InvalidOperationException("[VL-CLIENT-PREPARE-FAILED] Prepared APK missing");SetStage(65,"Setup: checking the selected BlueStacks instance…");var installed=await Once(30,"check-original-game");if(installed.Item1!=0)throw new InvalidOperationException(installed.Item3.Trim());using var installedJson=JsonDocument.Parse(installed.Item2);if(installedJson.RootElement.GetProperty("installed").GetBoolean()&&MessageBox.Show(this,"Village Life is already installed in this selected instance. Replacing an original-signed copy requires Android to remove that package first, which removes its app data. Continue only after making any backup you need.","Replace existing Village Life?",MessageBoxButtons.OKCancel,MessageBoxIcon.Warning)!=DialogResult.OK)return;SetStage(75,"Setup: installing Village Life into the selected instance…");await ToolQuiet("install-prepared-client","--apk",apk,"--obb",s.Obb!,"--replace");s.ClientPrepared=true;Write(s);SetStage(100,"Setup complete — click Play / Restart to start Village Life.");Log("Setup complete. The game is ready to start.");}
+    async Task BindInstance(){var r=await Once(30,"list-instances");if(r.Item1!=0)throw new InvalidOperationException(r.Item3.Trim());using var json=JsonDocument.Parse(r.Item2);var rows=json.RootElement.EnumerateArray().ToArray();if(rows.Length==0)throw new InvalidOperationException("[VL-BS-NO-PIE64] Create a dedicated Pie64 BlueStacks instance first.");using var d=new Form{Text="Choose dedicated Village Life instance",Width=650,Height=220,StartPosition=FormStartPosition.CenterParent};var c=new ComboBox{Left=20,Top=58,Width=590,DropDownStyle=ComboBoxStyle.DropDownList};foreach(var row in rows)c.Items.Add($"{row.GetProperty("display_name").GetString()} [{row.GetProperty("id").GetString()}] ADB {row.GetProperty("adb_port").GetInt32()}");c.SelectedIndex=0;d.Controls.AddRange(new Control[]{new Label{Text="Only the selected instance will be used; there is no default-instance fallback.",Left=20,Top=20,Width=590},c,new Button{Text="Bind this exact instance",Left=414,Top=112,Width=196,DialogResult=DialogResult.OK}});if(d.ShowDialog(this)!=DialogResult.OK)throw new OperationCanceledException();await ToolQuiet("bind-instance",rows[c.SelectedIndex].GetProperty("id").GetString()!);}
+    async Task StartServer(Settings s){if(backend is {HasExited:false})return;backend=Process.Start(Command("serve","--port",s.Port.ToString(),"--game-tables",s.GameTables,"--xapk",s.Xapk,"--obb",s.Obb!,"--inventory",s.Inventory))??throw new IOException("Could not start new backend");var p=backend;_=Task.Run(async()=>{while(await p.StandardOutput.ReadLineAsync() is string line)Log(line);});_=Task.Run(async()=>{while(await p.StandardError.ReadLineAsync() is string line)Log(line);});await Task.Delay(700);if(!(await http.GetAsync("http://127.0.0.1:"+s.Port+"/health")).IsSuccessStatusCode)throw new InvalidOperationException("[VL-SERVER-FAILED] Backend health check failed");}
+    async Task Play(){var s=Read();if(!Ready(s)){Log("[VL-SETUP-REQUIRED] Run Set Up Game first.");return;}SetStage(10,"Starting: validating your selected BlueStacks instance…");await ToolQuiet("verify-instance");SetStage(25,"Starting: launching the local Village Life service…");await StartServer(s);SetStage(45,"Starting: waiting for BlueStacks…");await ToolQuiet("start-instance");await ToolQuiet("adb-check");SetStage(70,"Starting: checking game-to-server connection…");await ToolQuiet("probe-guest-backend","--port",s.Port.ToString());SetStage(90,"Starting Village Life…");await ToolQuiet("launch-original-game");SetStage(100,"Village Life started — use the BlueStacks window to play.");Log("Village Life launch requested. Network isolation has not been certified; see Advanced diagnostics for technical evidence.");}
+    async Task Stop(){var p=backend;if(p is null||p.HasExited){Log("Backend is not running");return;}p.Kill(true);await p.WaitForExitAsync();Log("New backend stopped; saves remain in Local AppData.");}
+    async Task Connection(){var s=Read();if(!Ready(s)){Log("[VL-SETUP-REQUIRED] Run Set Up Game first.");return;}await Tool("adb-check");await Tool("probe-guest-backend","--port",s.Port.ToString());}
+    Task OpenData(){Directory.CreateDirectory(state);Process.Start(new ProcessStartInfo(state){UseShellExecute=true});return Task.CompletedTask;}
+    async Task Diagnostics(){SetStage(10,"Diagnostics: collecting guest network evidence…");await Tool("verify-network");SetStage(75,"Diagnostics: exporting safe missing-request summary…");await Tool("export-missing-requests");SetStage(100,"Diagnostics complete — review the technical log above.");Log("[VL-NETWORK-UNVERIFIED] Tests collect evidence only; they do not create or certify an isolation policy.");}
+    Task Help(){MessageBox.Show(this,"Set Up Game binds a dedicated Pie64 instance, prepares a private copy of your XAPK, and installs it only in that instance. Play starts the independent backend with your game definitions/resources, checks guest-to-host connectivity, then starts Village Life.\n\nThe legacy 2.11 backend is never invoked. Do not distribute this unfinished build or proprietary game assets.","Village Life Revival help");return Task.CompletedTask;}
 }
