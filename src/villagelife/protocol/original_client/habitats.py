@@ -19,6 +19,8 @@ from .world import OriginalWorldRules
 
 SHELTER_INTERVAL = 86400
 SHELTER_CAPACITIES = {0: 2, 1: 4, 2: 6, 3: 2, 4: 4, 5: 6, 6: 2, 7: 2}
+# 0.2.6 gave these preplaced Woodland shelters two assignable beds.
+LEGACY_WOODLAND_SHELTERS = frozenset(range(34, 42))
 SERVICES = {
     'ClientUserFireService/StartFire', 'ClientUserFireService/OilFire',
     'ClientUserShelterService/AssignBedToVillager',
@@ -64,12 +66,16 @@ class OriginalHabitatRules:
         return 'local-bed-' + hashlib.sha256(
             (str(entity_id) + ':' + str(index)).encode()).hexdigest()[:24]
 
-    def initialize(self, entity: dict) -> bool:
+    def initialize(self, entity: dict, *, legacy_import: bool = False) -> bool:
         changed = False
+        legacy_capacity = None
         if entity.get('templateType') == 'fire_type':
             defaults = {'isBurning': 0, 'startsAt': 0, 'endsAt': 0, 'oilAppliedAt': 0}
         elif entity.get('templateType') == 'shelter':
-            is_home = bool(entity.get('localCreated') or entity.get('sourceWorkAreaId'))
+            if (legacy_import and self.world._area(entity) == 1
+                    and int(entity.get('templateId', -1)) in LEGACY_WOODLAND_SHELTERS):
+                legacy_capacity = 2
+            is_home = bool(entity.get('localCreated') or entity.get('sourceWorkAreaId') or legacy_capacity)
             if not is_home:
                 # Earlier builds incorrectly gave every authored shelter prop
                 # two local beds. Remove only our identifiable, empty synthetic
@@ -106,7 +112,7 @@ class OriginalHabitatRules:
                 changed = True
         if entity['templateType'] == 'shelter':
             beds = entity['beds']
-            capacity = self.capacities.get(int(entity.get('templateId', -1)))
+            capacity = legacy_capacity or self.capacities.get(int(entity.get('templateId', -1)))
             kept = [bed for index, bed in enumerate(beds)
                     if (bed.get('id') != self._generated_bed_id(entity['id'], index)
                         or bed.get('villagerId')
@@ -130,10 +136,10 @@ class OriginalHabitatRules:
                 changed = True
         return changed
 
-    def migrate(self, state: dict, at: int) -> bool:
+    def migrate(self, state: dict, at: int, *, legacy_import: bool = False) -> bool:
         changed = False
         for entity in state.get('world', {}).get('entities', []):
-            changed = self.initialize(entity) or changed
+            changed = self.initialize(entity, legacy_import=legacy_import) or changed
         if changed:
             state.setdefault('rules', {})['habitats'] = {
                 'evidence': 'original fire_task, shelter, fire_type and task tables; native bed/fire calls',
@@ -317,8 +323,8 @@ class OriginalHabitatRules:
                 'xp': reward}, True
 
     def operate(self, state: dict, service: str, data: dict, at: int,
-                receipt_key: str | None = None) -> tuple[dict, bool]:
-        migrated = self.migrate(state, at)
+                receipt_key: str | None = None, *, legacy_import: bool = False) -> tuple[dict, bool]:
+        migrated = self.migrate(state, at, legacy_import=legacy_import)
         expired = self.sync(state, at)
         prechanged = migrated or expired
         key = service + ':' + receipt_key if receipt_key else None

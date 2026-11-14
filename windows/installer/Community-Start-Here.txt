@@ -1,18 +1,18 @@
-VILLAGE LIFE COMMUNITY TEST 0.2.88
-Part II of III
+VILLAGE LIFE COMMUNITY UPDATE 0.3.0
+Part III of III
 
 Close your previous launcher before starting this build.
 If you already use the SQLite reliability test, open the new launcher
-and click Play / Restart. The launcher backs up the existing village
+and click Play. The launcher backs up the selected village
 before its first play on this version.
 
 FIRST SETUP
-1. Install BlueStacks 5 and create a dedicated Pie 64-bit instance.
-2. Enable Android Debug Bridge in that instance's Advanced settings.
-3. Open Village Life Community Test and click Set Up Game.
-4. Select your dedicated instance. Setup automatically prepares the
-   bundled Village Life archive and installs the game and expansion files.
-5. Click Play / Restart. Keep the launcher open while you play.
+Open Village Life Community Test and click Play. The launcher guides you
+through any BlueStacks steps still needed, installs the game and expansion,
+and waits for the game to connect. Keep the launcher open while you play.
+If you close setup halfway through, click Play again to resume.
+Completed actions save as you play. You can close the launcher without
+pressing Stop. After an unexpected shutdown, reopen it and click Play.
 
 This installer includes the original XAPK with its expansion (OBB),
 the Windows launcher, local server and signing tools.
@@ -23,6 +23,7 @@ separate BlueStacks instance. Keep the original installation and instance.
 Use Choose Village to switch between your current and imported villages
 after stopping the launcher server.
 New villages receive 1,000 gems when they first enter Woodland.
+Use Add Gems in the launcher to add gems to the selected local village.
 
 Use Advanced diagnostics to export the latest run's request summary if you
 find a problem. This Windows installer is unsigned.

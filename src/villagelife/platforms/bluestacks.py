@@ -65,13 +65,13 @@ def list_instances(*, config: Path | None = None) -> list[Instance]:
         raise InstanceError('VL-BS-CONFIG-MISSING', 'BlueStacks configuration file is unavailable') from exc
 
 
-def select_by_id(rows: list[Instance], ident: str) -> Instance:
+def select_by_id(rows: list[Instance], ident: str, *, check_live_port: bool = True) -> Instance:
     """Only accept an exact stable internal ID. Never name/default fallback."""
     selected = [row for row in rows if row.id == ident]
     if len(selected) != 1:
         raise InstanceError('VL-BS-INSTANCE-MISSING', 'Selected instance is missing. Reselect it explicitly.')
     row = selected[0]
-    if row.live_adb_port is not None and row.live_adb_port != row.adb_port:
+    if check_live_port and row.live_adb_port is not None and row.live_adb_port != row.adb_port:
         raise InstanceError('VL-BS-PORT-DIVERGED', f'{ident} ADB configuration and live port disagree')
     return row
 
@@ -101,8 +101,7 @@ def _atomic_settings(path: Path, value: dict) -> None:
 
 
 def bind_instance(path: Path, selected: Instance, install_dir: Path) -> dict:
-    if selected.live_adb_port is not None and selected.live_adb_port != selected.adb_port:
-        raise InstanceError('VL-BS-PORT-DIVERGED', 'Cannot bind an instance with a changed live port')
+    """Remember the selected VM's identity. ADB still requires strict verification."""
     receipt = {'schema': 1, 'id': selected.id, 'name': selected.display_name,
                'adb_port': selected.adb_port, 'install_dir': str(install_dir.resolve()).casefold()}
     # This never touches BlueStacks itself and stores no account or save data.
@@ -110,14 +109,14 @@ def bind_instance(path: Path, selected: Instance, install_dir: Path) -> dict:
     return receipt
 
 
-def verify_binding(path: Path, rows: list[Instance], install_dir: Path) -> Instance:
+def verify_binding(path: Path, rows: list[Instance], install_dir: Path, *, check_live_port: bool = True) -> Instance:
     try:
         receipt = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError) as exc:
         raise InstanceError('VL-BS-INSTANCE-UNSET', 'Choose a BlueStacks instance before continuing') from exc
     if not isinstance(receipt, dict) or receipt.get('schema') != 1 or not isinstance(receipt.get('id'), str):
         raise InstanceError('VL-BS-BINDING-INVALID', 'Instance settings are invalid. Reselect the instance.')
-    row = select_by_id(rows, receipt['id'])
+    row = select_by_id(rows, receipt['id'], check_live_port=check_live_port)
     if receipt.get('adb_port') != row.adb_port:
         raise InstanceError('VL-BS-INSTANCE-CHANGED', 'ADB port changed. Reselect and verify the instance.')
     if receipt.get('name') != row.display_name:
@@ -127,38 +126,58 @@ def verify_binding(path: Path, rows: list[Instance], install_dir: Path) -> Insta
     return row
 
 
-def start_bound_instance(path: Path) -> str:
+def start_bound_instance(path: Path, *, protect=None) -> str:
     """Opt-in launch of a verified VM; does not install APKs or change networks."""
     root = installation()
-    selected = verify_binding(path, list_instances(), root)
+    selected = verify_binding(path, list_instances(), root, check_live_port=False)
+    if protect is not None:
+        protect(selected.id)
     subprocess.Popen([str(root/'HD-Player.exe'), '--instance', selected.id],
                      creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     return selected.id
 
 
-def adb_status(path: Path) -> dict:
+def adb_status(path: Path, *, once: bool = False) -> dict:
     root = installation()
-    selected = verify_binding(path, list_instances(), root)
-    serial = f'127.0.0.1:{selected.adb_port}'
     adb = root/'HD-Adb.exe'
     deadline = time.monotonic() + 45
-    command_failed = False
+    status = 'unreachable'
     while time.monotonic() < deadline:
+        rows = list_instances()
+        selected = verify_binding(path, rows, root, check_live_port=False)
+        if selected.live_adb_port != selected.adb_port:
+            status = 'initializing'
+            if once:
+                return {'instance': selected.id, 'name': selected.display_name,
+                        'adb_port': selected.adb_port, 'connected': False, 'status': status}
+            time.sleep(1)
+            continue
+        serial = f'127.0.0.1:{selected.adb_port}'
         try:
             hidden = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-            connected = subprocess.run([str(adb), 'connect', serial], capture_output=True,
-                                       timeout=6, creationflags=hidden)
-            probe = subprocess.run([str(adb), '-s', serial, 'get-state'], capture_output=True,
-                                   timeout=6, creationflags=hidden)
+            def run(*args: str):
+                return subprocess.run([str(adb), *args], capture_output=True,
+                                      timeout=6, creationflags=hidden)
+            run('connect', serial)
+            probe = run('-s', serial, 'get-state')
+            if probe.returncode == 0 and probe.stdout.strip() == b'device':
+                boot = run('-s', serial, 'shell', 'getprop', 'sys.boot_completed')
+                status = 'ready' if boot.returncode == 0 and boot.stdout.strip() == b'1' else 'booting'
+            else:
+                status = 'unreachable'
         except (OSError, subprocess.TimeoutExpired):
-            command_failed = True
-        else:
-            if (not connected.returncode and not probe.returncode and
-                    probe.stdout.decode('utf-8','replace').strip() == 'device'):
-                return {'instance': selected.id, 'adb_port': selected.adb_port, 'connected': True}
+            status = 'tool_unavailable'
+        if once or status == 'ready':
+            return {'instance': selected.id, 'name': selected.display_name,
+                    'adb_port': selected.adb_port, 'connected': status in {'booting', 'ready'},
+                    'status': status}
         time.sleep(1)
-    if command_failed:
+    if status == 'tool_unavailable':
         raise InstanceError('VL-ADB-UNAVAILABLE', 'ADB command failed or timed out while waiting for the selected instance')
+    if status == 'booting':
+        raise InstanceError('VL-BS-BOOT-PENDING', 'ADB is connected, but Android has not finished starting')
+    if status == 'initializing':
+        raise InstanceError('VL-BS-PORT-DIVERGED', 'BlueStacks has not confirmed the selected instance’s ADB port')
     raise InstanceError('VL-ADB-NOT-READY', 'Selected instance did not become ready. Check that it is running and ADB is enabled.')
 
 

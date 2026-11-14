@@ -51,6 +51,21 @@ class MigrationTests(unittest.TestCase):
         self.save_path.write_text(json.dumps({**self.save, 'changed': True}), encoding='utf-8')
         self.assertIn('CONFLICT', importer.import_directory(self.source, apply=True)[0].status)
 
+    def test_launcher_accepts_backup_larger_than_old_limit(self):
+        key = OriginalClientSessions.device_key(self.profile['deviceId'])
+        (self.source / (key + '.json')).write_text(json.dumps(self.profile), encoding='utf-8')
+        save = {'version': 1, 'userHash': {'data': {'villagers': []}}}
+        # The original server's formatted gameplay history can exceed 20 MiB.
+        path = self.source / (key + '.tutorial.json')
+        with path.open('w', encoding='utf-8') as stream:
+            json.dump(save, stream)
+            for _ in range(21):
+                stream.write(' ' * (1024 * 1024))
+        candidate, = preview(self.source)['villages']
+        storage = self.root / 'imported'
+        import_copy(self.source, storage, key, candidate['fingerprint'])
+        repo = SqliteSaveRepository(storage / (key + '.sqlite3'))
+        self.assertEqual(repo.list_all_villages()[0].payload['originalSave'], save)
 
     def test_launcher_copy_survives_device_change_and_keeps_current_village(self):
         old_install = self.root / '0.2.6'

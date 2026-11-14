@@ -75,7 +75,10 @@ class OriginalBabyCharmRules:
         seed = self.defs.item('gachaVillager', base_id)
         ages = [int(age) for age in seed['ageRange'].split(',')]
         index = next((i for i, age in enumerate(ages) if age >= 18), 0)
-        kind = self.defs.item('villager_type', seed['villagerType'].split(',')[index])
+        age = ages[index]
+        kinds = [self.defs.item('villager_type', ident) for ident in seed['villagerType'].split(',')]
+        kind = next((row for row in kinds if int(row['minAge']) <= age <= int(row['maxAge'])),
+                    kinds[index])
         area = state['areaId']
         entities = state['world']['entities']
         position = next((entity['position'] for entity in entities
@@ -91,7 +94,7 @@ class OriginalBabyCharmRules:
             'templateType': 'villager_type', 'templateId': int(kind['id']), 'serverPersisted': True,
             'villagerBaseId': int(base_id), 'collectionBaseId': int(base_id), 'startingArea': area,
             'birthType': 0, 'specialType': 0, 'energyLevel': int(kind['maxEnergy']), 'energyTimeStamp': at,
-            'startAge': 0, 'bornAt': at - ages[index] * self.family.world.seconds_per_year, 'updatedAt': at,
+            'startAge': 0, 'bornAt': at - age * self.family.world.seconds_per_year, 'updatedAt': at,
             'pregnant': 'false', 'pregnancyTryCount': 0, 'pregnancyStartTime': 0,
             'gender': int(seed['genderType']), 'xp': 0, 'rarity': int(seed['star']), 'shelterBedId': '',
             'position': {'x': position['x'] + 40, 'y': position['y'], 'areaId': area, 'rotation': 0},

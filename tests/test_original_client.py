@@ -212,7 +212,8 @@ class OriginalCraftingTests(unittest.TestCase):
         class Definitions:
             def item(self, table, ident):
                 return {
-                    ('task', 8): {'taskType': '1', 'workAreaType': '7',
+                    ('villager_skill', 6): {'professionMultiplier': '0.25'},
+                    ('task', 8): {'taskType': '1', 'workAreaType': '7', 'skillId': '6',
                                   'rewardSet': '2', 'requirementSet': '0', 'duration': '10'},
                     ('villager_type', 1): {'canWork': '1'},
                     ('workshop', 0): {'tableIDs': '91', 'tableCount': '1'},
@@ -226,7 +227,7 @@ class OriginalCraftingTests(unittest.TestCase):
 
         entities = [
             {'id': 'actor', 'templateType': 'villager_type', 'templateId': 1,
-             'position': {'areaId': 1}},
+             'position': {'areaId': 1}, 'skills': [{'skillTypeId': 6}, {'skilltypeId': 6}]},
             {'id': 'wrong-table', 'templateType': 'workshop', 'templateId': 0,
              'position': {'areaId': 1, 'x': 10, 'y': 20}},
             {'id': 'compatible', 'templateType': 'workshop', 'templateId': 1,
@@ -238,7 +239,12 @@ class OriginalCraftingTests(unittest.TestCase):
         result = OriginalWorkRules(Definitions()).start(
             state, 'ClientTaskService/StartCraftingTask', request, 100)
         self.assertEqual(state['workAreas'][result['workAreaId']]['sourceId'], 'compatible')
-        self.assertEqual(result['completionTime'], 110)
+        self.assertEqual(result['completionTime'], 105)
+        self.assertEqual(state['workAreas'][result['workAreaId']]['completionTime'], 105)
+        work = OriginalWorkRules(Definitions())
+        task = {'duration': '61', 'skillId': '6'}
+        self.assertEqual(work._duration(task, {'skills': [{'skilltypeId': 7}]}), 61)
+        self.assertEqual(work._duration(task, {'skills': [{'skilltypeId': 6}] * 4}), 15)
 
 
 class OriginalBirthSkillTests(unittest.TestCase):
@@ -459,6 +465,23 @@ class OriginalClientHttpTests(unittest.TestCase):
         self.assertEqual((person['templateId'], person['startAge'], person['bornAt']),
                          (11, 12, birthday-86400))
         self.assertEqual(person['comingOfAgeCompletedAt'],birthday)
+
+    def test_maxed_villager_can_complete_coming_of_age(self):
+        from types import SimpleNamespace
+        from villagelife.protocol.original_client.life_stages import OriginalLifeStages
+
+        skills = [{'skilltypeId': 2, 'skillOriginType': 1}] * 3
+        person = {'id': 'child', 'templateType': 'villager_type', 'skills': skills}
+        state = {'areaId': 1, 'user': {'maxAreaId': 1}, 'world': {'entities': [person]}}
+        definition = {'id': '2', 'area': '1'}
+        defs = SimpleNamespace(item=lambda *_: definition, rows=lambda _: [definition])
+        stages = OriginalLifeStages(SimpleNamespace(defs=defs, global_value=lambda _: '3'))
+        with patch.object(stages, 'ready', return_value=100):
+            selection = {'villagerId': 'child', 'skillTypeId': 2}
+            self.assertEqual(stages.choose_skill(state, selection, 100), {})
+            self.assertEqual(stages.choose_skill(state, selection, 101), {})
+        self.assertEqual(person['skills'], skills)
+        self.assertEqual(person['comingOfAgeCompletedAt'], 100)
 
     def test_imported_pregnancy_skip_returns_same_newborn_and_charges_once(self):
         game = self.server.original

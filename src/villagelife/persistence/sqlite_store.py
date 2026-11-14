@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 import hashlib
 import json
+import os
 import sqlite3
+import tempfile
 import time
 import uuid
 
@@ -117,6 +119,8 @@ class SqliteSaveRepository:
         db.row_factory = sqlite3.Row
         db.execute('PRAGMA busy_timeout=30000')
         db.execute('PRAGMA foreign_keys=ON')
+        # WAL commits must reach durable storage before gameplay acknowledges them.
+        db.execute('PRAGMA synchronous=FULL')
         try:
             yield db
         finally:
@@ -130,7 +134,8 @@ class SqliteSaveRepository:
                 yield db
                 db.execute('COMMIT')
             except BaseException:
-                db.execute('ROLLBACK')
+                if db.in_transaction:
+                    db.execute('ROLLBACK')
                 raise
 
     def create_account(self, name: str = '', account_id: str | None = None) -> str:
@@ -216,8 +221,9 @@ class SqliteSaveRepository:
             )
             db.execute('INSERT INTO receipts VALUES (?,?,?,?,?)',
                        (village_id, operation_key, digest, dumps(response), next_revision))
-            new_row = db.execute('SELECT * FROM villages WHERE village_id=?', (village_id,)).fetchone()
-            return self._snapshot(new_row), response, False
+            snapshot = VillageSnapshot(village_id=village_id, account_id=row['owner_id'], format=row['format'],
+                                       schema_version=row['schema_version'], revision=next_revision, payload=updated)
+            return snapshot, response, False
 
     def checkpoint(self) -> None:
         """Checkpoint active WAL before producing a file-level backup."""
@@ -230,14 +236,23 @@ class SqliteSaveRepository:
         if target == self.path:
             raise ValueError('Backup path must differ from active database')
         target.parent.mkdir(parents=True, exist_ok=True)
-        already_existed = target.exists()
-        if already_existed:
+        if target.exists():
             raise FileExistsError(f'Backup already exists: {target}')
+        with tempfile.NamedTemporaryFile(dir=target.parent, prefix='.backup-', suffix='.pending',
+                                         delete=False) as file:
+            pending = Path(file.name)
         try:
-            with self.connect() as src, closing(sqlite3.connect(target)) as dst:
+            with self.connect() as src, closing(sqlite3.connect(pending)) as dst:
+                dst.execute('PRAGMA synchronous=FULL')
                 src.backup(dst)
-        except BaseException:
-            # A partial backup must never look like a successful new save.
-            if not already_existed:
-                target.unlink(missing_ok=True)
-            raise
+                dst.execute('PRAGMA journal_mode=DELETE')
+                if dst.execute('PRAGMA quick_check').fetchone() != ('ok',):
+                    raise sqlite3.DatabaseError('Backup did not pass its integrity check')
+            with pending.open('r+b') as file:
+                os.fsync(file.fileno())
+            if os.name == 'nt':
+                pending.rename(target)  # Windows rename fails if the target exists.
+            else:
+                os.link(pending, target)
+        finally:
+            pending.unlink(missing_ok=True)

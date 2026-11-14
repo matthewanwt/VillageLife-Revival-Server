@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 import json
 import logging
 import re
+from threading import Lock
 from villagelife.core.errors import (InvalidAction, NotFound, RevisionConflict,
                                        DuplicateActionConflict, NotImplementedRule)
 from villagelife.core.model import empty_native_village
@@ -40,6 +41,8 @@ class ApiServer(ThreadingHTTPServer):
         self.tokens = AccountTokens(repo)
         self.dispatcher = ActionDispatcher.safe_default(repo)
         self.ticks = WorldTickCoordinator(repo, SystemClock())
+        self.original_login_count = 0
+        self.original_login_lock = Lock()
 
 
 class ApiHandler(BaseHTTPRequestHandler):
@@ -103,7 +106,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             if self.server.original and path != '/health' and not path.startswith('/v1/'):
                 return self._original_get(path)
             if path == '/health':
-                return self._json(200, {'ok': True, 'service': 'villagelife-revival-server', 'api': 1})
+                return self._json(200, {'ok': True, 'service': 'villagelife-revival-server', 'api': 1,
+                                        'originalClientLogins': self.server.original_login_count})
             if path.startswith('/web/'):
                 self._record_missing('GET', path, 404)
                 return self._json(404, {'error': 'Original-client protocol is not implemented by this NEW backend'})
@@ -219,7 +223,11 @@ class ApiHandler(BaseHTTPRequestHandler):
                 response=self.server.original.community.process(request)
             else:
                 response=self.server.original.process(request)
-            return self._binary(200,original_encode(response,compressed=mode=='zlib-xor'))
+            self._binary(200,original_encode(response,compressed=mode=='zlib-xor'))
+            if path.endswith('/Login') and response.get('code') == 200:
+                with self.server.original_login_lock:
+                    self.server.original_login_count += 1
+            return
         except (ValueError, KeyError, TypeError) as exc:
             LOG.info('Rejected original-client request: %s',type(exc).__name__)
             return self._binary(400,b'Invalid original-client request','text/plain')

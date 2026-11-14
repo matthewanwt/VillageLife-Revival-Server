@@ -34,7 +34,8 @@ $pyArgs = @('-m', 'PyInstaller', '--log-level', 'WARN', '--noconfirm', '--onedir
             '--specpath', $build, (Join-Path $PSScriptRoot 'new_backend_entry.py'))
 $originalPythonPath = $env:PYTHONPATH
 try {
-    $env:PYTHONPATH = Join-Path $repo 'src'
+    $sourcePath = Join-Path $repo 'src'
+    $env:PYTHONPATH = if ($originalPythonPath) { $sourcePath + [IO.Path]::PathSeparator + $originalPythonPath } else { $sourcePath }
     & $PythonPath @pyArgs
 } finally {
     $env:PYTHONPATH = $originalPythonPath
@@ -74,4 +75,4 @@ if ((Get-FileHash -LiteralPath $bundled -Algorithm SHA256).Hash -ne $expectedHas
 New-Item -ItemType Directory -Path $output | Out-Null
 & $IsccPath /Qp "/DStageDir=$stage" "/DOutputDir=$output" (Join-Path $PSScriptRoot 'VillageLifeCommunity.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
-Get-Item -LiteralPath (Join-Path $output 'VillageLife-Community-0.2.88-Part-II-of-III-Setup.exe')
+Get-Item -LiteralPath (Join-Path $output 'VillageLife-Community-0.3.0-Part-III-of-III-Setup.exe')

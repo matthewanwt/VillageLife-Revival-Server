@@ -10,6 +10,7 @@ from .daily import satisfy_wants
 from .world import OriginalWorldRules
 from .inventory import OriginalInventoryRules, spend_gems
 from .buildings import OriginalBuildingRules
+from .birth_skills import skill_type
 import struct
 
 class OriginalWorkRules:
@@ -35,6 +36,21 @@ class OriginalWorkRules:
         number=Decimal(str(value))
         if not number.is_finite() or number<0:raise ValueError('Invalid material amount')
         return number
+
+    def _duration(self, task: dict, actor: dict) -> int:
+        duration = self._n(task['duration'])
+        if duration != int(duration):
+            raise NotImplementedError('Nonintegral duration rule not recovered')
+        skill = int(task.get('skillId', 0))
+        if not skill:
+            return int(duration)
+        ranks = sum(skill_type(row) == skill for row in actor.get('skills', []))
+        if not ranks:
+            return int(duration)
+        # Original Script 3253 subtracts the authored multiplier per matching
+        # rank, caps the reduction at 75%, then truncates the adjusted seconds.
+        reduction = self._n(self.defs.item('villager_skill', skill)['professionMultiplier'])
+        return int(duration * max(Decimal('0.25'), 1 - ranks * reduction))
 
     def start(self,state:dict,service:str,data:dict,at:int)->dict:
         expected=self.TYPES.get(service)
@@ -175,10 +191,8 @@ class OriginalWorkRules:
             costs[key]=costs.get(key,Decimal(0))+cost
         for key,cost in costs.items():
             if self._n(state['inventory'].get(key,0))<cost:raise ValueError('Insufficient material for task')
-        duration=self._n(task['duration'])
-        if duration<0:raise ValueError('Task duration cannot be negative')
-        if duration!=int(duration):raise NotImplementedError('Nonintegral duration rule not recovered')
-        response={'createdAt':at,'completionTime':at+int(duration),
+        duration=self._duration(task,actor)
+        response={'createdAt':at,'completionTime':at+duration,
                   'workAreaId':'local-work-'+uuid.uuid4().hex,'villager':{'id':villager}}
         for key,cost in costs.items():
             if key not in self.inventory.starter_tools:

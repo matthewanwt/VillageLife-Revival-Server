@@ -6,7 +6,9 @@ creates a separately signed local copy under the user's application-data area.
 from __future__ import annotations
 
 from pathlib import Path
+from hashlib import file_digest
 import os
+import shlex
 import shutil
 import subprocess
 import zipfile
@@ -14,6 +16,8 @@ import zipfile
 from villagelife.platforms import bluestacks
 
 PACKAGE = 'com.playdemic.villagelife.android'
+OBB_NAME = f'main.241.{PACKAGE}.obb'
+OBB_DIR = f'/sdcard/Android/obb/{PACKAGE}'
 
 
 def _adb_detail(result: subprocess.CompletedProcess[bytes]) -> str:
@@ -59,10 +63,39 @@ def existing_installation(binding: Path) -> bool:
     return result.returncode == 0 and b'package:' in result.stdout
 
 
+def prepared_apk_installed(binding: Path, apk: Path) -> bool:
+    result = _adb(binding, ['shell', 'pm', 'path', PACKAGE], timeout=15)
+    lines = result.stdout.decode('utf-8', 'replace').splitlines()
+    paths = [line.removeprefix('package:') for line in lines if line.startswith('package:')]
+    if result.returncode or len(paths) != 1:
+        return False
+    result = _adb(binding, ['shell', f'sha256sum {shlex.quote(paths[0])}'], timeout=30)
+    with apk.open('rb') as source:
+        expected = file_digest(source, 'sha256').hexdigest().encode('ascii')
+    return result.returncode == 0 and result.stdout.split()[:1] == [expected]
+
+
+def _obb_matches(binding: Path, remote: str, size: int) -> bool:
+    result = _adb(binding, ['shell', f'stat -c %s {remote}'], timeout=15)
+    return result.returncode == 0 and result.stdout.strip() == str(size).encode('ascii')
+
+
+def prepared_installation_ready(binding: Path, obb: Path | None = None) -> bool:
+    if not existing_installation(binding):
+        return False
+    size = obb.stat().st_size if obb is not None else 452933712
+    return size > 0 and _obb_matches(binding, f'{OBB_DIR}/{OBB_NAME}', size)
+
+
 def install_prepared(binding: Path, apk: Path, obb: Path, *, replace: bool = False) -> None:
     """Install only a prepared local APK and matching OBB into the bound VM."""
     apk = apk.resolve(strict=True)
     obb = obb.resolve(strict=True)
+    if obb.name != OBB_NAME or obb.stat().st_size == 0:
+        raise ValueError('The prepared expansion file is invalid')
+    if prepared_apk_installed(binding, apk):
+        _install_obb(binding, obb)
+        return
     if existing_installation(binding) and not replace:
         raise bluestacks.InstanceError('VL-GAME-EXISTS', 'Village Life is already installed. Confirm replacement before installing the prepared client')
     install = _adb(binding, ['install', *( ['-r'] if replace else [] ), str(apk)], timeout=180)
@@ -83,26 +116,63 @@ def install_prepared(binding: Path, apk: Path, obb: Path, *, replace: bool = Fal
     if not _adb_install_succeeded(install):
         raise bluestacks.InstanceError('VL-GAME-INSTALL-FAILED', 'Android rejected the locally prepared APK'
                                        + (': ' + detail if detail else f' (ADB exit code {install.returncode})'))
-    remote_dir = f'/sdcard/Android/obb/{PACKAGE}'
-    mkdir = _adb(binding, ['shell', 'mkdir', '-p', remote_dir])
-    pushed = _adb(binding, ['push', str(obb), f'{remote_dir}/{obb.name}'], timeout=300)
-    if mkdir.returncode or pushed.returncode:
-        raise bluestacks.InstanceError('VL-OBB-INSTALL-FAILED', 'Could not transfer the required OBB to the selected instance')
-    installed = _adb(binding, ['shell', 'pm', 'path', PACKAGE])
-    if installed.returncode or b'package:' not in installed.stdout:
+    if not existing_installation(binding):
         raise bluestacks.InstanceError('VL-GAME-VERIFY-FAILED', 'APK installation could not be verified')
+    _install_obb(binding, obb)
+
+
+def repair_prepared_obb(binding: Path, apk: Path, obb: Path) -> None:
+    obb = obb.resolve(strict=True)
+    if obb.name != OBB_NAME or obb.stat().st_size == 0:
+        raise ValueError('The prepared expansion file is invalid')
+    if not prepared_apk_installed(binding, apk):
+        raise bluestacks.InstanceError('VL-GAME-VERIFY-FAILED', 'The selected instance does not have the matching prepared APK')
+    _install_obb(binding, obb)
+
+
+def _install_obb(binding: Path, obb: Path) -> None:
+    size = obb.stat().st_size
+    destination = f'{OBB_DIR}/{OBB_NAME}'
+    if _obb_matches(binding, destination, size):
+        return
+    pending = destination + '.vl-part'
+
+    def transfer_step(label: str, args: list[str], *, timeout: int = 30) -> None:
+        result = _adb(binding, args, timeout=timeout)
+        if result.returncode:
+            raw = (result.stderr + b'\n' + result.stdout).decode('utf-8', 'replace')
+            lines = [line.strip() for line in raw.splitlines()
+                     if line.strip() and not line.lstrip().startswith('[')]
+            detail = ' '.join(lines[-3:])[-400:]
+            raise bluestacks.InstanceError('VL-OBB-INSTALL-FAILED',
+                f'{label}: {detail or f"ADB exit code {result.returncode}"}. Click Play to retry.')
+
+    if not _obb_matches(binding, pending, size):
+        transfer_step('Create expansion folder', ['shell', 'mkdir', '-p', OBB_DIR])
+        transfer_step('Transfer expansion file', ['push', str(obb), pending], timeout=300)
+        if not _obb_matches(binding, pending, size):
+            raise bluestacks.InstanceError('VL-OBB-INSTALL-FAILED', 'The transferred expansion is incomplete. Click Play to retry.')
+    transfer_step('Activate expansion file', ['shell', 'mv', '-f', pending, destination])
+    if not _obb_matches(binding, destination, size):
+        raise bluestacks.InstanceError('VL-OBB-INSTALL-FAILED', 'Android did not confirm the final expansion file.')
 
 
 def probe_local_server(binding: Path, port: int = 80) -> None:
     """Prove guest-to-host HTTP only; deliberately does not claim isolation."""
     if not 1 <= port <= 65535:
         raise ValueError('Invalid server port')
-    # toybox is present on supported BlueStacks Android images.  A nonzero
-    # result is surfaced as an actionable connectivity failure, never ignored.
-    command = f'toybox wget -q -T 6 -O /dev/null http://10.0.2.2:{port}/health'
-    result = _adb(binding, ['shell', 'sh', '-c', command], timeout=15)
-    if result.returncode:
-        raise bluestacks.InstanceError('VL-GUEST-BACKEND-UNREACHABLE', 'The selected Android guest cannot reach the local backend')
+    url = f'http://10.0.2.2:{port}/health'
+    # Pie64 can ship BusyBox wget on PATH without a Toybox wget applet.
+    command = (f'if command -v wget >/dev/null 2>&1; then wget -T 6 -O - {url}; '
+               f'else toybox wget -T 6 -O - {url}; fi')
+    result = _adb(binding, ['shell', command], timeout=15)
+    if b'villagelife-revival-server' in result.stdout:
+        return
+    detail = _adb_detail(result)
+    if 'unknown command wget' in detail.lower() or 'wget: not found' in detail.lower():
+        raise bluestacks.InstanceError('VL-GUEST-PROBE-UNAVAILABLE', 'This BlueStacks instance has no supported HTTP check')
+    raise bluestacks.InstanceError('VL-GUEST-BACKEND-UNREACHABLE',
+        'BlueStacks could not verify the local server' + (f': {detail}' if detail else ''))
 
 
 def guest_network_evidence(binding: Path) -> dict[str, str]:

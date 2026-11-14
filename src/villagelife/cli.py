@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 from villagelife.core.errors import InvalidAction
 from villagelife.core.model import empty_native_village
@@ -40,7 +41,10 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser('export'); a.add_argument('village_id'); a.add_argument('output', type=Path)
     a = sub.add_parser('import-portable'); a.add_argument('owner_id'); a.add_argument('archive', type=Path)
     a = sub.add_parser('backup-db'); a.add_argument('output', type=Path)
+    a = sub.add_parser('add-local-gems'); a.add_argument('amount', type=int); a.add_argument('--village-id')
+    sub.add_parser('list-gem-villages')
     a = sub.add_parser('serve'); a.add_argument('--port', type=int, default=8765)
+    a.add_argument('--launcher-stdin', action='store_true', help=argparse.SUPPRESS)
     a.add_argument('--game-tables', type=Path, help='Enable original-client RPC using user-extracted game definitions')
     a.add_argument('--xapk', type=Path, help='User-supplied original XAPK to read the original manifest')
     a.add_argument('--obb', type=Path, help='User-supplied OBB for original resource responses')
@@ -50,18 +54,21 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument('key'); a.add_argument('fingerprint')
     sub.add_parser('list-legacy-villages')
     sub.add_parser('stop-original-game')
-    sub.add_parser('list-instances')
+    a = sub.add_parser('list-instances'); a.add_argument('--eligible', action='store_true')
     a = sub.add_parser('bind-instance'); a.add_argument('instance_id')
-    sub.add_parser('verify-instance')
+    a = sub.add_parser('verify-instance'); a.add_argument('--selection-only', action='store_true')
     sub.add_parser('start-instance')
-    sub.add_parser('adb-check')
+    a = sub.add_parser('adb-check'); a.add_argument('--once', action='store_true')
+    sub.add_parser('check-bluestacks')
     sub.add_parser('open-instance-manager')
     sub.add_parser('export-missing-requests')
     sub.add_parser('network-report')
     a = sub.add_parser('verify-network'); a.add_argument('--port', type=int, choices=range(1, 65536), metavar='PORT')
     a = sub.add_parser('export-support'); a.add_argument('output', type=Path)
     a = sub.add_parser('install-prepared-client'); a.add_argument('--apk', type=Path, required=True); a.add_argument('--obb', type=Path, required=True); a.add_argument('--replace', action='store_true')
-    sub.add_parser('check-original-game')
+    a = sub.add_parser('repair-prepared-obb'); a.add_argument('--apk', type=Path, required=True); a.add_argument('--obb', type=Path, required=True)
+    a = sub.add_parser('check-original-game'); a.add_argument('--prepared', action='store_true')
+    a.add_argument('--apk', type=Path); a.add_argument('--obb', type=Path)
     a = sub.add_parser('probe-guest-backend'); a.add_argument('--port', type=int, default=80)
     a = sub.add_parser('launch-original-game')
     a.add_argument('--restart', action='store_true', help='Close only Village Life before launching it')
@@ -69,8 +76,28 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument('--prepare-data', action='store_true')
 
     args = parser.parse_args(argv)
+    if args.command == 'serve' and args.launcher_stdin:
+        from threading import Thread
+
+        def stop_with_launcher() -> None:
+            try:
+                sys.stdin.buffer.read()
+            finally:
+                os._exit(0)  # Each completed save has already been committed.
+
+        Thread(target=stop_with_launcher, daemon=True).start()
     binding = default_db().parent/'bluestacks-binding.json'
+    if args.command in {'add-local-gems', 'list-gem-villages'} and not args.db.is_file():
+        raise ValueError('Play through the tutorial to Woodland before adding gems.')
     legacy_storage = binding.parent / 'imported-villages'
+
+    def protect_instance(ident: str) -> None:
+        from villagelife.persistence.legacy_launcher import protect_original_instance
+        try:
+            protect_original_instance(legacy_storage, ident)
+        except ValueError as exc:
+            raise bs.InstanceError('VL-LEGACY-INSTANCE-PROTECTED', str(exc)) from exc
+
     if args.command in {'preview-legacy-villages', 'copy-legacy-village', 'list-legacy-villages'}:
         from villagelife.persistence import legacy_launcher
         if args.command == 'preview-legacy-villages':
@@ -83,22 +110,28 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == 'stop-original-game':
         from villagelife.platforms.original_client import stop_game
         stop_game(binding); return 0
+    if args.command == 'check-bluestacks':
+        bs.installation(); return 0
     if args.command == 'list-instances':
-        print(json.dumps([vars(x) for x in bs.list_instances()], ensure_ascii=False)); return 0
+        rows = bs.list_instances()
+        if args.eligible:
+            from villagelife.persistence.legacy_launcher import saved_copies
+            protected = {village.get('source_instance') for village in saved_copies(legacy_storage)}
+            rows = [row for row in rows if row.id not in protected]
+        print(json.dumps([vars(x) for x in rows], ensure_ascii=False)); return 0
     if args.command == 'bind-instance':
-        selected = bs.select_by_id(bs.list_instances(), args.instance_id)
-        from villagelife.persistence.legacy_launcher import protect_original_instance
-        protect_original_instance(legacy_storage, selected.id)
+        selected = bs.select_by_id(bs.list_instances(), args.instance_id, check_live_port=False)
+        protect_instance(selected.id)
         print(json.dumps(bs.bind_instance(binding, selected, bs.installation()), ensure_ascii=False)); return 0
     if args.command == 'verify-instance':
-        from villagelife.persistence.legacy_launcher import protect_original_instance
-        selected = bs.verify_binding(binding, bs.list_instances(), bs.installation())
-        protect_original_instance(legacy_storage, selected.id)
+        selected = bs.verify_binding(binding, bs.list_instances(), bs.installation(),
+                                     check_live_port=not args.selection_only)
+        protect_instance(selected.id)
         print('Verified:', selected.id); return 0
     if args.command == 'start-instance':
-        print('Started:', bs.start_bound_instance(binding)); return 0
+        print('Started:', bs.start_bound_instance(binding, protect=protect_instance)); return 0
     if args.command == 'adb-check':
-        print(json.dumps(bs.adb_status(binding))); return 0
+        print(json.dumps(bs.adb_status(binding, once=args.once))); return 0
     if args.command == 'open-instance-manager':
         bs.open_manager(); print('Opened Multi-instance Manager'); return 0
     if args.command == 'network-report':
@@ -113,9 +146,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == 'install-prepared-client':
         from villagelife.platforms.original_client import install_prepared
         install_prepared(binding, args.apk, args.obb, replace=args.replace); print('Prepared client installed in the explicitly bound instance'); return 0
+    if args.command == 'repair-prepared-obb':
+        from villagelife.platforms.original_client import repair_prepared_obb
+        repair_prepared_obb(binding, args.apk, args.obb); print('Expansion verified in the explicitly bound instance'); return 0
     if args.command == 'check-original-game':
-        from villagelife.platforms.original_client import existing_installation
-        print(json.dumps({'package': 'com.playdemic.villagelife.android', 'installed': existing_installation(binding)})); return 0
+        from villagelife.platforms.original_client import (existing_installation, prepared_apk_installed,
+                                                          prepared_installation_ready)
+        if args.apk:
+            installed = prepared_apk_installed(binding, args.apk)
+        elif args.prepared:
+            installed = prepared_installation_ready(binding, args.obb)
+        else:
+            installed = existing_installation(binding)
+        print(json.dumps({'package': 'com.playdemic.villagelife.android', 'installed': installed})); return 0
     if args.command == 'probe-guest-backend':
         from villagelife.platforms.original_client import probe_local_server
         probe_local_server(binding, args.port); print('Guest can reach the local backend (isolation remains unverified)'); return 0
@@ -177,6 +220,44 @@ def main(argv: list[str] | None = None) -> int:
         if args.output.exists():
             parser.error('Backup already exists; refusing to overwrite')
         repo.backup_to(args.output); print('Backup written:', args.output)
+    elif args.command in {'list-gem-villages', 'add-local-gems'}:
+        with repo.connect() as db:
+            villages = db.execute("""
+                SELECT village_id,
+                       COALESCE(json_extract(payload_json, '$.originalSave.normal.user.name'), 'Local Village') AS name,
+                       COALESCE(json_extract(payload_json, '$.originalSave.normal.user.userLevelID'), 0) AS level,
+                       COALESCE(json_extract(payload_json, '$.originalSave.normal.inventory."323"'), 0) AS gems,
+                       updated_at AS last_saved
+                FROM villages WHERE json_type(payload_json, '$.originalSave.normal') = 'object'
+                ORDER BY updated_at DESC, village_id
+            """).fetchall()
+        if args.command == 'list-gem-villages':
+            print(json.dumps([dict(row) for row in villages]))
+            return 0
+        if not 1 <= args.amount <= 2_000_000_000:
+            raise ValueError('Enter a whole number from 1 to 2,000,000,000.')
+        if not villages:
+            raise ValueError('Play through the tutorial to Woodland before adding gems.')
+        if args.village_id is None and len(villages) != 1:
+            raise ValueError(f'Found {len(villages)} Woodland villages. Select a village to add gems.')
+        village_id = args.village_id or villages[0]['village_id']
+        if not any(row['village_id'] == village_id for row in villages):
+            raise ValueError('The selected Woodland village was not found.')
+
+        def add_gems(payload):
+            world = payload['originalSave'].get('normal')
+            if not isinstance(world, dict):
+                raise ValueError('Play through the tutorial to Woodland before adding gems.')
+            stock = world['inventory']
+            total = stock.get('323', 0) + args.amount
+            if total > 2_000_000_000:
+                raise ValueError('The resulting balance would exceed 2,000,000,000 gems.')
+            stock['323'] = total
+            return {'balance': total}
+
+        _, result, _ = repo.mutate(village_id, operation_key=f'launcher:gems:{uuid.uuid4()}',
+                                   request={'amount': args.amount}, change=add_gems)
+        print(json.dumps(result))
     elif args.command == 'serve':
         if not 1 <= args.port <= 65535:
             parser.error('Port must be between 1 and 65535')

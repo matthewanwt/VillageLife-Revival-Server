@@ -93,6 +93,31 @@ class OriginalHabitatTests(unittest.TestCase):
 
         self.assertEqual(home['beds'], [])
 
+    def test_import_restores_special_woodland_bed_after_old_cleanup(self):
+        occupied = local_bed('special', 1, 'resident')
+        shelter = {'id': 'special', 'templateType': 'shelter', 'templateId': 34,
+                   'position': {'areaId': 1}, 'beds': [occupied], 'happinessCollectedAt': 123}
+        state = {'world': {'entities': [shelter]}}
+        self.assertTrue(self.rules.migrate(state, 200, legacy_import=True))
+        self.assertEqual(shelter['beds'][0], occupied)
+        self.assertEqual(shelter['beds'][1], local_bed('special', 0))
+        self.assertEqual(shelter['happinessCollectedAt'], 123)
+        self.assertFalse(self.rules.migrate(state, 201, legacy_import=True))
+
+    def test_imported_hero_bed_survives_timer_reset_and_assignment(self):
+        person = {'id': 'worker', 'templateType': 'villager_type', 'position': {'areaId': 1}}
+        shelter = {'id': 'hero', 'templateType': 'shelter', 'templateId': 34, 'position': {'areaId': 1}}
+        state = {'areaId': 1, 'world': {'entities': [person, shelter]}}
+        self.rules.migrate(state, 100, legacy_import=True)
+        bed_id = shelter['beds'][0]['id']
+        self.rules.operate(state, 'ClientUserShelterService/ResetHappinessTimer',
+                           {'userShelterId': 'hero'}, 101, legacy_import=True)
+        self.rules.operate(state, 'ClientUserShelterService/AssignBedToVillager',
+                           {'villagerId': 'worker', 'shelterBedId': bed_id}, 102, legacy_import=True)
+        self.assertEqual(person['shelterBedId'], bed_id)
+        self.assertEqual(shelter['beds'][0]['villagerId'], 'worker')
+        self.assertEqual(len(shelter['beds']), 2)
+
     def test_synthetic_cleanup_never_discards_an_existing_occupant(self):
         actor = {'id': 'villager-1', 'templateType': 'villager_type',
                  'shelterBedId': 'occupied-bed', 'position': {'areaId': 1}}

@@ -12,18 +12,20 @@ from villagelife.core.validation import validate_json_tree
 from .legacy_import import LegacySaveImporter, PROFILE_PATTERN, digest
 from .sqlite_store import SqliteSaveRepository
 
-MAX_SAVE_BYTES = 20 * 1024 * 1024
+# Active 0.2.6 villages retain gameplay history in the save JSON.
+MAX_SAVE_BYTES = 128 * 1024 * 1024
+MAX_PROFILE_BYTES = 1024 * 1024
 SLOT_KEY = re.compile(r'[0-9a-f]{64}')
 INSTANCE_ID = re.compile(r'Pie64(?:_\d+)?')
 
 
-def _read(path: Path) -> bytes:
+def _read(path: Path, *, limit: int = MAX_PROFILE_BYTES) -> bytes:
     if path.is_symlink():
         raise ValueError('Symbolic links are unsupported for legacy save files.')
     with path.open('rb') as stream:
-        data = stream.read(MAX_SAVE_BYTES + 1)
-    if len(data) > MAX_SAVE_BYTES:
-        raise ValueError('Legacy save exceeds the supported size.')
+        data = stream.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError(f'File exceeds the {limit // (1024 * 1024)} MiB import limit.')
     return data
 
 
@@ -77,7 +79,7 @@ def _summary(saved: dict) -> dict:
 
 def _candidate(root: Path, key: str, instance: str) -> tuple[dict, dict, dict, str, str]:
     profile_raw = _read(root / (key + '.json'))
-    save_raw = _read(root / (key + '.tutorial.json'))
+    save_raw = _read(root / (key + '.tutorial.json'), limit=MAX_SAVE_BYTES)
     profile, saved = json.loads(profile_raw), json.loads(save_raw)
     if not isinstance(profile, dict) or not isinstance(saved, dict):
         raise ValueError('Legacy profile and save must be JSON objects.')
@@ -98,14 +100,20 @@ def _candidate(root: Path, key: str, instance: str) -> tuple[dict, dict, dict, s
 def preview(folder: Path) -> dict:
     root, instance = _legacy_folder(folder)
     villages, skipped = [], 0
+    errors = set()
     for path in sorted(root.iterdir()):
         if not PROFILE_PATTERN.fullmatch(path.name) or not path.with_suffix('.tutorial.json').is_file():
             continue
         try:
             villages.append(_candidate(root, path.stem, instance)[0])
-        except (ValueError, KeyError, TypeError, OSError, InvalidAction):
+        except (ValueError, KeyError, TypeError, OSError, InvalidAction, RecursionError) as exc:
             skipped += 1
-    return {'villages': villages, 'skipped': skipped}
+            if isinstance(exc, (ValueError, InvalidAction)) and not isinstance(exc, json.JSONDecodeError):
+                errors.add(str(exc) if str(exc).startswith(('File exceeds', 'Unsupported', 'The legacy save')) else
+                           'A save or profile contains invalid data.')
+            else:
+                errors.add('A save or profile could not be read.')
+    return {'villages': villages, 'skipped': skipped, 'errors': sorted(errors)}
 
 
 def import_copy(folder: Path, storage: Path, key: str, fingerprint: str) -> dict:
@@ -114,7 +122,7 @@ def import_copy(folder: Path, storage: Path, key: str, fingerprint: str) -> dict
     root, instance = _legacy_folder(folder)
     try:
         summary, profile, saved, profile_hash, save_hash = _candidate(root, key, instance)
-    except (ValueError, KeyError, TypeError, OSError, InvalidAction) as exc:
+    except (ValueError, KeyError, TypeError, OSError, InvalidAction, RecursionError) as exc:
         raise ValueError('The save could not be read. Close 0.2.6 and preview the folder again.') from exc
     if summary['fingerprint'] != fingerprint:
         raise ValueError('The 0.2.6 save changed after preview. Close 0.2.6 and preview it again.')

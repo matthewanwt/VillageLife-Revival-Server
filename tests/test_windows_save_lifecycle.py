@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from villagelife.persistence.sqlite_store import SqliteSaveRepository
@@ -15,6 +17,37 @@ from villagelife.catalog.sqlite_catalog import OriginalGameCatalog
 
 
 class WindowsSaveLifecycle(unittest.TestCase):
+    def test_process_death_keeps_committed_save_and_discards_interrupted_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = SqliteSaveRepository(Path(directory) / 'worlds.sqlite3')
+            village = repo.create_village(repo.create_account(), {'gems': 237})
+            with repo.connect() as db:
+                self.assertEqual(db.execute('PRAGMA synchronous').fetchone()[0], 2)
+            child = subprocess.Popen([sys.executable, '-c', """
+import sqlite3
+import sys
+import time
+db = sqlite3.connect(sys.argv[1], isolation_level=None)
+db.execute("PRAGMA synchronous=FULL")
+db.execute("UPDATE villages SET payload_json=?", ('{"gems":238}',))
+db.execute("BEGIN IMMEDIATE")
+db.execute("UPDATE villages SET payload_json=?", ('{"gems":0}',))
+print("interrupted", flush=True)
+time.sleep(30)
+""", str(repo.path)], stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(child.stdout.readline().strip(), 'interrupted')
+                self.assertGreater(repo.path.with_name(repo.path.name+'-wal').stat().st_size, 0)
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=10)
+                child.stdout.close()
+            reopened = SqliteSaveRepository(repo.path)
+            self.assertEqual(reopened.read_village(village).payload, {'gems': 238})
+            with reopened.connect() as db:
+                self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
+
     def test_backup_closed_and_not_overwritten(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); repo=SqliteSaveRepository(root/'active.sqlite3')

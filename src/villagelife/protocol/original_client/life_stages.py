@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import math
+from collections import Counter
 
+from .birth_skills import skill_type
 from .native_ids import mappings
 from .relationships import actor, actors, touch
 
@@ -92,10 +94,16 @@ class OriginalLifeStages:
             if not 1 <= int(definition['area']) <= maximum:
                 raise ValueError('This skill is unavailable in the village')
             ranks = person.get('skills', [])
-            count = sum(int(s.get('skilltypeId', s.get('skillTypeId'))) == skill for s in ranks)
-            if count >= int(self.world.global_value('skill_slots_max')):
-                raise ValueError('This villager already mastered the chosen skill')
-            person['skills'] = [*ranks, {'skilltypeId': skill, 'skillOriginType': 0}]
+            counts = Counter(map(skill_type, ranks))
+            limit = int(self.world.global_value('skill_slots_max'))
+            if counts[skill] >= limit:
+                if any(counts[int(row['id'])] < limit for row in self.world.defs.rows('villager_skill')
+                       if 1 <= int(row['area']) <= maximum):
+                    raise ValueError('This villager already mastered the chosen skill')
+                # Let the client finish the birthday when every available
+                # choice is full, retaining the existing ranks.
+            else:
+                person['skills'] = [*ranks, {'skilltypeId': skill, 'skillOriginType': 0}]
         person['comingOfAgeSkill'] = skill
         person['comingOfAgeCompletedAt'] = at
         touch(state, at)

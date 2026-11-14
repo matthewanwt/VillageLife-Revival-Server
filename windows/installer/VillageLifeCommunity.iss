@@ -7,16 +7,17 @@
 #endif
 
 [Setup]
+SetupIconFile=..\launcher\VillageLife.ico
 AppId=VillageLifeCommunityTest
 AppName=Village Life Community Test
-AppVersion=0.2.88
+AppVersion=0.3.0
 AppPublisher=Village Life Community Project
 DefaultDirName={localappdata}\Programs\VillageLifeCommunityTest
 DefaultGroupName=Village Life Community Test
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir={#OutputDir}
-OutputBaseFilename=VillageLife-Community-0.2.88-Part-II-of-III-Setup
+OutputBaseFilename=VillageLife-Community-0.3.0-Part-III-of-III-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

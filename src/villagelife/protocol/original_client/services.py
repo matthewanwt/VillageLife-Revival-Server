@@ -146,6 +146,13 @@ class OriginalClientGame:
                 operation_key='original:migrate:habitats-v4',
                 request={'action':'restore-authored-world-sync-assignments-and-real-shelter-beds','version':4},
                 change=reconcile)
+            if snapshot.format == 'legacy.profile+tutorial.v1':
+                def restore_legacy_beds(payload):
+                    normal=payload['originalSave']['normal']
+                    return {'bedsRestored':self.habitats.migrate(normal,int(time.time()),legacy_import=True)}
+                self.repo.mutate(ident.village_id,
+                    operation_key='original:migrate:legacy-woodland-beds-v2',
+                    request={'action':'restore-legacy-woodland-beds','version':2}, change=restore_legacy_beds)
             def reconcile_farm(payload):
                 normal=payload['originalSave']['normal']
                 return {'removedObsoleteFarmFoundation':self.buildings.reconcile_farm_foundations(normal)}
@@ -199,7 +206,8 @@ class OriginalClientGame:
                     world=(snapshot.payload.get('originalSave') or {}).get('normal')
                     outward,inward=mappings(world,ident.player_id) if isinstance(world,dict) else ({},{})
                     canonical=translate(data,inward)
-                    response=self._execute(ident,call,service,canonical)
+                    response=self._execute(ident,call,service,canonical,snapshot.payload.get('originalSave'),
+                                           legacy_import=snapshot.format=='legacy.profile+tutorial.v1')
                     response=translate(response,outward)
                     check_birth_cost |= service in BIRTH_COST_CHECKS
                 except InsufficientGems as exc:
@@ -256,15 +264,13 @@ class OriginalClientGame:
                             cost, balance, cost - balance)
                 return
 
-    def _execute(self, ident, call, service:str, data:dict)->dict:
-        snap=self.repo.read_village(ident.village_id)
-        save=snap.payload.get('originalSave')
+    def _execute(self, ident, call, service:str, data:dict, save, *, legacy_import=False)->dict:
         if not isinstance(save,dict):raise ValueError('Original tutorial not initialised; log in again')
         if service in NORMAL_READ and service!='ClientStartupService/GetAreaContent':
             return self._normal_read(save,service,data,ident)
         if service in {'ClientUserHashService/GetUserHash',
                        'ClientSettingService/GetUserGameSettings'}:
-            result, changed=self.tutorial.run(copy.deepcopy(save),service,data)
+            result, changed=self.tutorial.run(save,service,data)
             assert changed is False
             return result
         # Client RPC IDs alone are not unique across sessions. Bind to the session token.
@@ -318,7 +324,7 @@ class OriginalClientGame:
                     raise ValueError('Normal world required for fire and shelter actions')
                 else:
                     result,_=self.habitats.operate(normal,service,data,
-                                                  int(time.time()),operation_key)
+                                                  int(time.time()),operation_key,legacy_import=legacy_import)
             elif service==INTERACTIVE_SERVICE:
                 if not normal:raise ValueError('Normal world required for interactive activities')
                 result=self.wants.interactive.perform(normal,data,now)
