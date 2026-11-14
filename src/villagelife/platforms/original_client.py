@@ -212,6 +212,20 @@ def guest_network_evidence(binding: Path) -> dict[str, str]:
     return output
 
 
+def game_status(binding: Path) -> str:
+    """Distinguish an exited Android activity from an unsuccessful query."""
+    result = _adb(binding, ['shell', 'dumpsys', 'activity', 'activities'], timeout=8)
+    if result.returncode or b'ACTIVITY MANAGER ACTIVITIES' not in result.stdout:
+        # Some HD-Adb versions return success from connect even with no guest.
+        state = _adb(binding, ['get-state'], timeout=5)
+        if state.returncode or state.stdout.strip() in (b'offline', b'unknown'):
+            raise bluestacks.InstanceError('VL-ADB-NOT-READY', 'Selected instance is not ready for ADB')
+        return 'unknown'
+    package = (PACKAGE + '/').encode('ascii')
+    return ('running' if any(b'ActivityRecord{' in line and package in line
+                             for line in result.stdout.splitlines()) else 'closed')
+
+
 def stop_game(binding: Path) -> None:
     stopped = _adb(binding, ['shell', 'am', 'force-stop', PACKAGE], timeout=15)
     if stopped.returncode:

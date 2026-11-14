@@ -492,7 +492,7 @@ class OriginalClientGame:
             now=int(time.time())
             result=self.world.startup(world,now)
             self.wants.daily.project_energy(result['world']['entities'],now)
-            result['OfflineConsumptionMessageModel']=copy.deepcopy(world.get('offlineConsumption',[]))
+            result['OfflineConsumptionMessageModel']=self._offline_inbox_summary()
             return result
         if service=='ClientBuildingService/GetUserBuildingTasks':
             return self.buildings.list_foundations(world)
@@ -516,6 +516,12 @@ class OriginalClientGame:
                 result['userNotifications'].extend(self.life_stages.notifications(world, ident.player_id, now))
             return result
         if service=='ClientStartupService/GetStartupInfoForExtras':
-            return {'OfflineConsumptionMessageModel':copy.deepcopy(world.get('offlineConsumption',[]))}
+            return {'OfflineConsumptionMessageModel':self._offline_inbox_summary()}
         if service=='ClientWant/AllWants':return {'result':list(world.get('wants',[]))}
         raise NotImplementedError(service)
+
+    @staticmethod
+    def _offline_inbox_summary() -> dict:
+        # Client script 1971 counts a nonzero summary as a request, but its
+        # consumption panel (script 3400) is a no-op in this client.
+        return {'DrinksQuantity': 0, 'FoodQuantity': 0, 'TotalXp': 0}

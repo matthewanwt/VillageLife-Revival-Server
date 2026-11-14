@@ -35,7 +35,16 @@ public sealed partial class VillageLifeWindow : Form {
         Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Controls.Add(output);Controls.Add(stage);Controls.Add(progress);Controls.Add(bar);
         Add("Play",Play);Add("Stop",Stop);Add("Set Up Game",Setup);Add("Connection",Connection);Add("Save Backups",OpenData);Add("Logs",OpenData);Add("Help",Help);Add("Advanced diagnostics",Diagnostics);Add("Import 0.2.6 Save",async()=>{await ImportLegacy();});Add("Choose Village",ChooseVillage);Add("Add Gems",AddGems);
-        FormClosing+=async(_,e)=>{if(!closing&&backend is {HasExited:false}){e.Cancel=true;closing=true;await Stop();Close();}};
+        FormClosing+=async(_,e)=>{
+            if (closing || backend is not {HasExited:false}) return;
+            closing=true;
+            if (e.CloseReason==CloseReason.WindowsShutDown) return;
+            e.Cancel=true;
+            try { await Stop(); }
+            finally { Close(); }
+        };
+        gameMonitor.Tick+=CheckGameClosed;
+        FormClosed+=(_,_)=>gameMonitor.Dispose();
         Log(ReleaseTitle);Log("Click Play. Village Life will guide you through any steps still needed.");
         if(!File.Exists(ServerExe))Log("[VL-BUILD-INCOMPLETE] Bundled server missing: "+ServerExe);
     }
@@ -206,12 +215,6 @@ public sealed partial class VillageLifeWindow : Form {
     }
     async Task StartServer(Settings s) {
         if (backend is {HasExited:false}) return;
-        var portCheck=new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback,s.Port);
-        try { portCheck.Start(); }
-        catch (System.Net.Sockets.SocketException) {
-            throw new InvalidOperationException("The Village Life server port is already in use. Close the old launcher and try again.");
-        }
-        finally { portCheck.Stop(); }
         var command=Command("--db",VillageDatabase(s),"serve","--launcher-stdin","--port",s.Port.ToString(),"--game-tables",s.GameTables,
                             "--xapk",s.Xapk,"--obb",s.Obb!,"--inventory",s.Inventory);
         command.RedirectStandardInput=true;
@@ -219,20 +222,38 @@ public sealed partial class VillageLifeWindow : Form {
                 ?? throw new IOException("Could not start the Village Life server");
         var process=backend;
         _=Task.Run(async()=>{while(await process.StandardOutput.ReadLineAsync() is string line)Log(line);});
-        _=Task.Run(async()=>{while(await process.StandardError.ReadLineAsync() is string line)Log(line);});
+        var startupError=new TaskCompletionSource<string>();
+        _=Task.Run(async()=>{
+            while(await process.StandardError.ReadLineAsync() is string line) {
+                Log(line);
+                if (IsCode(line,"VL-SERVER-PORT-IN-USE")) startupError.TrySetResult(line);
+            }
+            startupError.TrySetResult("");
+        });
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(12));
         while (!process.HasExited && !deadline.IsCancellationRequested) {
             try {
                 using var response=await http.GetAsync("http://127.0.0.1:"+s.Port+"/health",deadline.Token);
-                if (response.IsSuccessStatusCode && !process.HasExited) return;
+                if (response.IsSuccessStatusCode && !process.HasExited) {
+                    using var health=JsonDocument.Parse(await response.Content.ReadAsStringAsync(deadline.Token));
+                    if (health.RootElement.ValueKind==JsonValueKind.Object &&
+                        health.RootElement.TryGetProperty("pid",out var pid) &&
+                        pid.ValueKind==JsonValueKind.Number &&
+                        pid.TryGetInt32(out int owner) && owner==process.Id) return;
+                }
             } catch (HttpRequestException) { }
+              catch (JsonException) { }
               catch (OperationCanceledException) { break; }
             await Task.Delay(250);
         }
         await Stop();
-        throw new InvalidOperationException("[VL-SERVER-FAILED] The local server did not become ready.");
+        var error=await Task.WhenAny(startupError.Task,Task.Delay(1000))==startupError.Task
+            ? await startupError.Task : "";
+        throw new InvalidOperationException(error.Length>0 ? error :
+            "[VL-SERVER-FAILED] The local server did not become ready. Check the log for details.");
     }
     async Task Stop() {
+        StopGameMonitoring();
         var process=backend;
         if (process is null || process.HasExited) {SetStage(0,"Server is stopped. Click Play to resume.");return;}
         SetStage(0,"Stopping the local server…");

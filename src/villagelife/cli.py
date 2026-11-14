@@ -1,6 +1,7 @@
 """Management command line. Keeps private databases outside version control."""
 from __future__ import annotations
 import argparse
+import errno
 import json
 import os
 import subprocess
@@ -54,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument('key'); a.add_argument('fingerprint')
     sub.add_parser('list-legacy-villages')
     sub.add_parser('stop-original-game')
+    sub.add_parser('original-game-status')
     a = sub.add_parser('list-instances'); a.add_argument('--eligible', action='store_true')
     a = sub.add_parser('bind-instance'); a.add_argument('instance_id')
     a = sub.add_parser('verify-instance'); a.add_argument('--selection-only', action='store_true')
@@ -110,6 +112,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == 'stop-original-game':
         from villagelife.platforms.original_client import stop_game
         stop_game(binding); return 0
+    if args.command == 'original-game-status':
+        from villagelife.platforms.original_client import game_status
+        print(game_status(binding)); return 0
     if args.command == 'check-bluestacks':
         bs.installation(); return 0
     if args.command == 'list-instances':
@@ -272,7 +277,13 @@ def main(argv: list[str] | None = None) -> int:
                 assets = ClientAssets(xapk=args.xapk, obb=args.obb, inventory=args.inventory)
         elif args.xapk or args.obb or args.inventory:
             parser.error('--game-tables is required with original game resources')
-        serve(repo, args.port, original=original, assets=assets)
+        try:
+            serve(repo, args.port, original=original, assets=assets)
+        except OSError as exc:
+            if exc.errno in {errno.EADDRINUSE, 10048} or getattr(exc, 'winerror', None) == 10048:
+                raise bs.InstanceError('VL-SERVER-PORT-IN-USE',
+                    f'Port {args.port} is held by another process. Close the program using it and click Play again.') from exc
+            raise
     return 0
 
 

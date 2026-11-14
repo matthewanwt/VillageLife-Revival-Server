@@ -255,7 +255,7 @@ public sealed partial class VillageLifeWindow {
         await EnsureAndroid();
         await BackupBeforeUpdate();
         var settings=await EnsureGame(Read());
-        bool startNew=backend is null || backend.HasExited;
+        StopGameMonitoring();
         try {
             await StartServer(settings);
             SetStage(75,"Checking whether BlueStacks can reach the local game server…");
@@ -288,8 +288,9 @@ public sealed partial class VillageLifeWindow {
                 throw new InvalidOperationException("Village Life opened but hasn’t signed in to the local server. Click Play to retry, or use Advanced diagnostics if this keeps happening.");
             SetStage(100,"Village Life connected. Play in the BlueStacks window.");
             Log("Village Life signed in to the local server.");
+            StartGameMonitoring(backend!);
         } catch {
-            if (startNew && backend is {HasExited:false}) await Stop();
+            if (backend is {HasExited:false}) await Stop();
             throw;
         }
     }

@@ -310,6 +310,28 @@ class OriginalClientHttpTests(unittest.TestCase):
         self.assertEqual(first['activeSequence'],217)
         self.assertEqual(first['data']['villagers'][0]['name'],'Example')
 
+    def test_offline_consumption_does_not_create_an_empty_inbox_request(self):
+        game = self.server.original
+        profile = self.login('offline-inbox')
+        identity = game.sessions.authenticate(profile)
+        totals = {'FoodQuantity': 3, 'DrinksQuantity': 2, 'TotalXp': 5}
+
+        def seed(payload):
+            payload['originalSave']['normal'] = {
+                'areaId': 1, 'world': {'entities': []}, 'user': {}, 'inventory': {},
+                'offlineConsumption': totals,
+            }
+            return {}
+
+        self.repo.mutate(identity.village_id, operation_key='fixture:offline-inbox', request={}, change=seed)
+        empty = dict.fromkeys(totals, 0)
+        for method in ('GetStartupInfo', 'GetStartupInfoForExtras'):
+            result = self.call(profile, 'ClientStartupService/' + method)
+            self.assertEqual(result['code'], 200)
+            self.assertEqual(result['data']['OfflineConsumptionMessageModel'], empty)
+        saved = self.repo.read_village(identity.village_id).payload['originalSave']['normal']
+        self.assertEqual(saved['offlineConsumption'], totals)
+
     def test_two_npc_weddings_with_older_device_records(self):
         game = self.server.original
         old_profile = self.login('device-older')

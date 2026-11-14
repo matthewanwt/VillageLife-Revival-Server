@@ -9,7 +9,9 @@ from typing import Any
 from urllib.parse import urlsplit
 import json
 import logging
+import os
 import re
+import socket
 from threading import Lock
 from villagelife.core.errors import (InvalidAction, NotFound, RevisionConflict,
                                        DuplicateActionConflict, NotImplementedRule)
@@ -31,7 +33,13 @@ TICK_PATH = re.compile(r'^/v1/villages/([0-9a-f-]{36})/tick$')
 
 class ApiServer(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    # On Windows SO_REUSEADDR can let a second listener take the same port.
+    allow_reuse_address = os.name != 'nt'
+
+    def server_bind(self):
+        if os.name == 'nt':
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
     def __init__(self, address, repo: SqliteSaveRepository, original=None, assets=None):
         super().__init__(address, ApiHandler)
@@ -107,7 +115,8 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return self._original_get(path)
             if path == '/health':
                 return self._json(200, {'ok': True, 'service': 'villagelife-revival-server', 'api': 1,
-                                        'originalClientLogins': self.server.original_login_count})
+                                        'originalClientLogins': self.server.original_login_count,
+                                        'pid': os.getpid()})
             if path.startswith('/web/'):
                 self._record_missing('GET', path, 404)
                 return self._json(404, {'error': 'Original-client protocol is not implemented by this NEW backend'})
