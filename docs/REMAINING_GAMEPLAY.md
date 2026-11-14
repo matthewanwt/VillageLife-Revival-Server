@@ -1,6 +1,6 @@
 # Release gate and remaining work
 
-**No complete installer is shipped. Both Inno Setup build scripts deliberately fail with `VL-INSTALLER-NOT-READY`.** This avoids distributing an API-only installer or implicitly launching the old backend. There is **no old server runtime fallback**.
+**The production/release installer remains blocked.** A separate private reliability-test installer is available for invited testing; it is labelled unfinished, includes the user-supplied game assets for that test, and never invokes the old backend. There is **no old server runtime fallback**.
 
 ## Functional gaps before real original-XAPK acceptance
 
@@ -22,4 +22,4 @@
 
 ## Current evidence
 
-39 applicable synthetic/unit tests passed on Linux; additionally, an opt-in original-protocol HTTP smoke test passed using the user's real extracted game definitions and a preserved-save test import. Native endpoint patch offsets verified uniquely in the user-supplied original APK. **Windows C# compilation, real XAPK boot/play and safe networking are not tested here.** Do not call this a release candidate or assume it is playable.
+49 synthetic/unit tests pass in the current checkout and the original-client diagnostics smoke check passes; these do not establish complete gameplay. Native endpoint patch offsets were verified uniquely in the user-supplied original APK. The reliability-test installer does not make this a release candidate: actual game failures remain expected, and Wi-Fi-on guest isolation is not certified.

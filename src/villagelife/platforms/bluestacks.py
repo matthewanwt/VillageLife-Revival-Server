@@ -145,8 +145,11 @@ def adb_status(path: Path) -> dict:
     command_failed = False
     while time.monotonic() < deadline:
         try:
-            connected = subprocess.run([str(adb), 'connect', serial], capture_output=True, timeout=6)
-            probe = subprocess.run([str(adb), '-s', serial, 'get-state'], capture_output=True, timeout=6)
+            hidden = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            connected = subprocess.run([str(adb), 'connect', serial], capture_output=True,
+                                       timeout=6, creationflags=hidden)
+            probe = subprocess.run([str(adb), '-s', serial, 'get-state'], capture_output=True,
+                                   timeout=6, creationflags=hidden)
         except (OSError, subprocess.TimeoutExpired):
             command_failed = True
         else:

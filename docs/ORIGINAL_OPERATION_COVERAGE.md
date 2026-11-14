@@ -5,26 +5,59 @@ No historical backend modules are included in or executed by this project. Names
 
 - Named operations referenced by historical implementation: **101** (including login and process endpoints).
 - New backend exposes original HTTP login/process endpoints: **2**.
-- Operation names with a dispatch path in the new backend: **45**.
-- Dispatch paths explicitly known to be incomplete or scenario-limited: **12**.
-- Named operations without a dispatch path in the new backend: **53**.
+- Operation names with a dispatch path in the new backend: **65**.
+- Dispatch paths explicitly known to be incomplete or scenario-limited: **32**.
+- Named operations without a dispatch path in the new backend: **34**.
 
 Having a dispatch path does **not** mean the result is gameplay-complete or verified against the real APK. Some optional operations are deliberately empty; some supported operations are tutorial-only.
+
+## Latest supplied missing-request capture
+
+The supplied `missing-requests (3).json` contains 27 distinct RPC names. All 27 have at least one recorded HTTP-style RPC result code 200, and `records` is empty. `ClientVillagerService/SetName` also has an earlier 501 entry, but later entries for the same operation are 200. This means each operation observed in this capture has a dispatch path; it does not prove every argument variant or gameplay mutation is complete. `object{}` request shapes imported from earlier diagnostics are unknown historical shapes, not proof that the client sent an empty object.
+
+The observed calls are accounted for by `OPTIONAL_EMPTY`, `NORMAL_READ`, the tutorial handler, achievement response, or explicit mutation branches in `original_client/services.py`. This is the current in-capture audit:
+
+- Analytics and optional content: `ClientAnalyticsService/Event`, `Install`, `Tutorial`, `Visit`; `ClientAdvertisement/PuppetShow`; `ClientData/GetBannerData`, `GetEmbedVideoData`, `GetGemSaleData`.
+- Achievement: `ClientAchievement/GetUserAchievements`.
+- Tutorial/session/settings: `ClientUserHashService/GetUserHash`, `SetActiveSequence`, `SetVillagerName`; `ClientSettingService/GetUserGameSettings`, `SaveGameSetting`; `ClientUserShelterService/ResetHappinessTimer`.
+- Startup and world: `ClientStartupService/GetStartupInfo`, `GetAreaContent`; `ClientUserService/ProgressArea`.
+- Village reads: `ClientMaterialService/GetUserMaterialTypes`; `ClientQuestService/GetQuests`; `ClientUserBundleService/GetUserBundles`; `ClientUserService/GetUserPayments`, `GetUserNotifications`; `ClientVillagerService/GetUserGachaVillagers`; `ClientWant/AllWants`; `ClientRequestService/GetPaginatedSentRequests`, `GetPaginatedReceivedRequests`.
+- Villager mutation: `ClientVillagerService/SetName`.
+
+The full legacy list below still contains operations that have not been dispatched or have only limited rules. Those still need porting as the tutorial and later gameplay reveal them.
 
 ## Known incomplete/conditional dispatches
 
 - `ClientBuildingService/CreateUserBuildingTask` (foundation placement only; linked construction tasks are incomplete)
 - `ClientBuildingService/DeleteUserBuildingTask`
 - `ClientBuildingService/DeleteUserFunBuildingType`
+- `ClientUserDecorItemService/CreateUserDecorItem` (single-currency and free placement persist in the area save, with automated replay coverage. The original client's response parsing and dual-price purchase behavior need live verification.)
 - `ClientRequestService/GetPaginatedReceivedRequests`
 - `ClientRequestService/GetPaginatedSentRequests`
 - `ClientStartupService/GetAreaContent`
 - `ClientTaskService/HarvestTask`
+- `ClientTaskService/InstantCompleteTaskCurve` (authored gem curve; original client timing and all task variants still need regression verification)
+- `ClientTaskService/StartBuildingTask` (table-driven construction and upgrade path; response variants need original-client verification)
 - `ClientTaskService/StartCraftingTask`
 - `ClientTaskService/StartFarmingTask`
 - `ClientTaskService/StartGatheringTask`
+- `ClientQuestService/AddQuest` (authored target validation; only material and interactive quest completion recovered)
+- `ClientQuestService/CompleteQuest` (material and interactive activity objectives only)
+- `ClientUser/CompleteTutorial` (local FTUE completion state only)
+- `ClientUser/IncreaseLevel` (authored XP thresholds, rewards, population cap, and local wheel prize)
+- `ClientWant/GenerateBirthWants`, `GenerateFireWants`, `GenerateFunWants`, `GenerateInteractiveWants`, `GenerateRelationshipWants`, `GenerateRetirementWants`, `GenerateShelterWants` (current wants preserved; event selection deferred)
+- `ClientWant/GenerateFoodWants`, `GenerateWaterWants` (authored interval and material mapping; life-stage exceptions are limited)
+- `ClientUserBundleService/CreateUserBundle` (commercial offers are recorded as ignored; no offer contents are granted)
+- `ClientVillager/Consume` (food and water consumption only; equipment interactions are deferred)
+- `ClientVillagerService/PerformFunActivity` (authored eligibility, wear, XP, energy, guaranteed rewards, and persistent weighted reward selection; live-client response variants still need verification)
+- `ClientVillagerService/GetVillagerRelations` (local village family history only)
+- `ClientVillagerService/GetVillagerSkills` (locally stored skill records only)
 - `ClientUserService/UnlockArea`
 - `ClientVillagerService/MoveVillagers`
+- `ClientUserFireService/StartFire`, `OilFire` (authored fire costs/rewards; live response and timer behavior need client verification)
+- `ClientUserShelterService/AssignBedToVillager`, `EmptyBed` (bed state is handled and covered by regression tests; current source fixes the bed-lookup binding; live client verification is still required)
+- Shelter bed counts are generated only for templates with a recovered capacity; authored bed arrays are preserved, and unknown templates no longer receive a guessed two-slot layout.
+- `ClientUserShelterService/CollectShelterHappiness`, `ResetHappinessTimer` (authored reward/timer rules; live response variants need verification)
 
 ## Not yet dispatched (return original-call 501)
 
@@ -36,32 +69,18 @@ Having a dispatch path does **not** mean the result is gameplay-complete or veri
 - `ClientFriendService/GetFriendStartupInfoForExtras`
 - `ClientFriendService/GetFriends`
 - `ClientNotification/ProcessAcceptedProposal`
-- `ClientQuestService/AddQuest`
-- `ClientQuestService/CompleteQuest`
 - `ClientRelationship/PrepareWedding`
 - `ClientRequest/AcceptDatingRequest`
 - `ClientRequestService/DeleteUserRequests`
 - `ClientRequestService/SendMarriageRequest`
-- `ClientTaskService/InstantCompleteTaskCurve`
-- `ClientTaskService/StartBuildingTask`
-- `ClientUser/CompleteTutorial`
-- `ClientUser/IncreaseLevel`
 - `ClientUser/TrackMarriageAchievement`
-- `ClientUserBundleService/CreateUserBundle`
-- `ClientUserDecorItemService/CreateUserDecorItem`
 - `ClientUserDecorItemService/DeleteUserDecorItem`
-- `ClientUserFireService/OilFire`
-- `ClientUserFireService/StartFire`
 - `ClientUserService/HandleUserMessages`
 - `ClientUserService/HandleUserNotification`
-- `ClientUserShelterService/AssignBedToVillager`
-- `ClientUserShelterService/CollectShelterHappiness`
-- `ClientUserShelterService/EmptyBed`
 - `ClientUtilityService/UpdatePosition`
 - `ClientVillager/Birth`
 - `ClientVillager/CanConcievePregnancy`
 - `ClientVillager/CommunityDateReceived`
-- `ClientVillager/Consume`
 - `ClientVillager/DesignPregnancy`
 - `ClientVillager/GetCommunityVillagers`
 - `ClientVillager/ReleaseXp`
@@ -71,16 +90,10 @@ Having a dispatch path does **not** mean the result is gameplay-complete or veri
 - `ClientVillagerService/CreateGachaVillager`
 - `ClientVillagerService/GetNeighborVillagers`
 - `ClientVillagerService/GetPartnerVillager`
-- `ClientVillagerService/GetVillagerRelations`
-- `ClientVillagerService/GetVillagerSkills`
 - `ClientVillagerService/OptIntoCommunity`
-- `ClientVillagerService/PerformFunActivity`
 - `ClientVillagerService/PerformInteractiveActivity`
 - `ClientVillagerService/SkipPregnancy`
-- `ClientWant/GenerateBirthWants`
 - `ClientWant/GenerateChildWants`
-- `ClientWant/GenerateInteractiveWants`
-- `ClientWant/GenerateRelationshipWants`
 - `ClientWant/SatisfyRelationshipWant`
 
 ## Other routed operations (require client-side regression verification)

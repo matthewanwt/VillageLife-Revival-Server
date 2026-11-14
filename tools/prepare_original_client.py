@@ -122,7 +122,8 @@ def sign_local(unsigned:Path,out:Path,java_home:Path|None=None)->Path:
              '-storepass:env','VL_SIGNING_PASSWORD',
              '-keyalg','RSA','-keysize','2048','-validity','3650',
              '-dname','CN=Village Life Private Local Test']
-        subprocess.run(cmd,check=True,timeout=90,env=env,capture_output=True,text=True)
+        subprocess.run(cmd,check=True,timeout=90,env=env,capture_output=True,text=True,
+                       creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     else:
         password=password_file.read_text(encoding='utf-8')
     env={**os.environ,'VL_SIGNING_PASSWORD':password}
@@ -130,13 +131,15 @@ def sign_local(unsigned:Path,out:Path,java_home:Path|None=None)->Path:
     subprocess.run([signer,'-keystore',str(key),'-storepass:env','VL_SIGNING_PASSWORD',
                     '-digestalg','SHA-256','-sigalg','SHA256withRSA',
                     '-signedjar',str(signed),str(unsigned),'preservation-local'],
-                    check=True,timeout=180,env=env,capture_output=True,text=True)
+                    check=True,timeout=180,env=env,capture_output=True,text=True,
+                    creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     # -strict returns exit code 4 for the expected locally self-signed
     # preservation certificate on current JDKs.  Verification without strict
     # still fails for a broken/tampered archive, while accepting that this is
     # deliberately not a publicly trusted Android signing certificate.
     checked=subprocess.run([signer,'-verify',str(signed)],
-                           check=False,timeout=60,env=env,capture_output=True,text=True)
+                           check=False,timeout=60,env=env,capture_output=True,text=True,
+                           creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     if checked.returncode:
         detail=(checked.stderr or checked.stdout).strip().replace('\r',' ').replace('\n',' ')[:240]
         raise ValueError('Local APK signature verification failed'+(': '+detail if detail else ''))
@@ -148,12 +151,16 @@ def main(argv=None):
     parser.add_argument('--output',type=Path,required=True,
                         help='Private runtime directory outside Git/release output')
     parser.add_argument('--java-home',type=Path)
+    parser.add_argument('--prepare-data',action='store_true',help='Derive local runtime tables and resource offsets')
     parser.add_argument('--skip-sign',action='store_true',
                         help='Diagnostics only: unsigned APK cannot be installed')
     args=parser.parse_args(argv)
     original_hash=digest(args.xapk)
     raw,obb=unpack_game(args.xapk,args.output)
     unsigned=make_unsigned(raw,args.output)
+    if args.prepare_data:
+        from villagelife.protocol.original_client.source_assets import derive_runtime_assets
+        derive_runtime_assets(obb,args.output)
     with zipfile.ZipFile(unsigned) as prepared_apk:
         google_games_disabled=GOOGLE_GAMES_DISABLED in prepared_apk.read('lib/armeabi-v7a/libpdandroid.so')
     signed=None if args.skip_sign else sign_local(unsigned,args.output,args.java_home)

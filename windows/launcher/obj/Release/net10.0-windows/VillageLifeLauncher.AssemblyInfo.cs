@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("VillageLifeLauncher")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c496a7e20a3465be2660c3eb55062ca6d804dfa8")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e95655ad12b0ade414b93bfeb09564d7ada5dc10")]
 [assembly: System.Reflection.AssemblyProductAttribute("VillageLifeLauncher")]
 [assembly: System.Reflection.AssemblyTitleAttribute("VillageLifeLauncher")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -11,7 +11,6 @@ import json
 import re
 import time
 import uuid
-from villagelife.core.errors import MigrationConflict
 from villagelife.persistence.sqlite_store import SqliteSaveRepository, dumps
 
 
@@ -60,28 +59,22 @@ class LegacySaveImporter:
 
     def _import_record(self, key: str, profile: dict, saved: dict | None,
                        profile_hash: str, save_hash: str, has_save: bool,
-                       apply: bool) -> ImportResult:
-        with self.repository.connect() as db:
+                       apply: bool, *, launch_copy: dict | None = None) -> ImportResult:
+        access = self.repository.transaction if apply else self.repository.connect
+        with access() as db:
             prior = db.execute('SELECT * FROM legacy_imports WHERE legacy_key=?', (key,)).fetchone()
-        if prior:
-            if prior['profile_digest'] != profile_hash or prior['save_digest'] != save_hash:
-                return ImportResult(key, 'CONFLICT: changed since prior import; no overwrite', has_save,
-                                    prior['account_id'], prior['village_id'])
-            return ImportResult(key, 'already-imported', has_save,
-                                prior['account_id'], prior['village_id'])
-        if not apply:
-            return ImportResult(key, 'ready-to-import (dry run)', has_save)
-        account_id = str(uuid.uuid4())
-        village_id = str(uuid.uuid4())
-        now = int(time.time())
-        payload = {
-            'originalProfile': profile,
-            'originalSave': saved,
-            'sourceFormat': 'legacy-profile+tutorial',
-        }
-        # Atomic account + village + mapping creation. Uses JSON with no normalization
-        # so original, unknown fields and original family IDs survive unchanged.
-        with self.repository.transaction() as db:
+            if prior:
+                status = ('CONFLICT: changed since prior import; no overwrite'
+                          if prior['profile_digest'] != profile_hash or prior['save_digest'] != save_hash
+                          else 'already-imported')
+                return ImportResult(key, status, has_save, prior['account_id'], prior['village_id'])
+            if not apply:
+                return ImportResult(key, 'ready-to-import (dry run)', has_save)
+
+            account_id, village_id = str(uuid.uuid4()), str(uuid.uuid4())
+            now = int(time.time())
+            payload = {'originalProfile': profile, 'originalSave': saved,
+                       'sourceFormat': 'legacy-profile+tutorial'}
             db.execute('INSERT INTO accounts VALUES (?,?,?)',
                        (account_id, now, str(profile.get('displayName', ''))[:100]))
             db.execute('INSERT INTO villages VALUES (?,?,?,?,?,?,?,?)',
@@ -90,5 +83,6 @@ class LegacySaveImporter:
                         0, dumps(payload), now, now))
             db.execute('INSERT INTO legacy_imports VALUES (?,?,?,?,?,?)',
                        (key, profile_hash, save_hash, account_id, village_id, now))
-        return ImportResult(key, 'imported (original untouched)', has_save,
-                            account_id, village_id)
+            if launch_copy is not None:
+                db.execute("INSERT INTO metadata VALUES ('legacy_launch_copy', ?)", (dumps(launch_copy),))
+        return ImportResult(key, 'imported (original untouched)', has_save, account_id, village_id)

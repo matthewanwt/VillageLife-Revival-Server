@@ -7,9 +7,9 @@ Unknown worker/habitat invariants fail rather than damaging the save.
 from __future__ import annotations
 import copy
 import json
-import time
 from .catalog import OriginalDefinitions
 from .world import OriginalWorldRules
+from .habitats import OriginalHabitatRules
 
 class AreaRules:
     MATERIAL_MARKERS={1:'231',2:'232',3:'1536'}
@@ -55,17 +55,23 @@ class AreaRules:
         initialized.append(area_id)
         return True
 
-    def unlock(self,state:dict, raw_area, now:int)->dict:
-        area_id=self.destination(raw_area)
-        maximum=int(state['user'].get('maxAreaId',1))
-        if area_id>maximum:
-            if area_id!=maximum+1:raise ValueError('Unlock preceding village first')
-            marker=self.definitions.item('material_type',self.MATERIAL_MARKERS[area_id])
-            if int(state['user']['userLevelID'])<int(marker['unlockLevel']):
+    def validate_unlock(self, state: dict, area_id: int) -> int:
+        maximum = int(state['user'].get('maxAreaId', 1))
+        if area_id > maximum:
+            if area_id != maximum + 1:
+                raise ValueError('Unlock preceding village first')
+            marker = self.definitions.item('material_type', self.MATERIAL_MARKERS[area_id])
+            if int(state['user']['userLevelID']) < int(marker['unlockLevel']):
                 raise ValueError('Village level too low to unlock this area')
-        self.seed(state,area_id,now)
-        state['user']['maxAreaId']=max(area_id,maximum)
-        state['revision']=int(state.get('revision',0))+1
+        return maximum
+
+    def unlock(self,state:dict, raw_area, now:int)->dict:
+        area_id = self.destination(raw_area)
+        maximum = self.validate_unlock(state, area_id)
+        seeded = self.seed(state, area_id, now)
+        state['user']['maxAreaId'] = max(area_id, maximum)
+        if seeded or area_id > maximum:
+            state['revision'] = int(state.get('revision', 0)) + 1
         return {'userArea':{'areaId':area_id},'user':dict(state['user']),
                 'inventory':copy.deepcopy(state.get('inventory',{}))}
 
@@ -74,18 +80,19 @@ class AreaRules:
         if area_id>int(state['user'].get('maxAreaId',1)):
             raise ValueError('Area has not been unlocked')
         self.seed(state,area_id,now)
-        if state['areaId']!=area_id:
-            state['areaId']=area_id
-            area,scenario=self.definitions.scenario_for_area(area_id)
-            state['areaName']=area['name']
-            state['user']['scenarioId']=int(scenario['serverScenarioId'])
+        if state['areaId'] != area_id or area_id != 1:
+            area, scenario = self.definitions.scenario_for_area(area_id)
+            state['areaId'] = area_id
+            state['areaName'] = area['name']
+            state['scenarioId'] = state['user']['scenarioId'] = int(scenario['serverScenarioId'])
         state['revision']=int(state.get('revision',0))+1
         return self.world.area_content(state,area_id,now)
 
     def move(self,state:dict,data:dict,now:int)->dict:
         area_id=self.destination(data.get('areaId'))
-        if area_id>int(state['user'].get('maxAreaId',1)):
-            raise ValueError('Destination area not unlocked')
+        # The story's Move Villagers screen submits this before the loader
+        # requests UnlockArea. First settlement uses the same gates as unlock.
+        maximum = self.validate_unlock(state, area_id)
         ids=data.get('villagerIds')
         if not isinstance(ids,list) or not 1<=len(ids)<=100 or not all(isinstance(v,str) for v in ids):
             raise ValueError('Owned villagerIds array required')
@@ -95,20 +102,43 @@ class AreaRules:
         for ident in ids:
             if ident not in actors:raise ValueError('Unknown villager for this world')
             people.append(actors[ident])
-        for person in people:
-            if person.get('shelterBedId'):
-                raise NotImplementedError('Moving villagers with assigned beds needs verified habitat transfer rules')
-            if any(t.get('villagerId')==person['id'] and t.get('status')!='harvested'
-                   for t in state.get('workAreas',{}).values()):
-                raise ValueError('Complete existing villager work before transfer')
-        self.seed(state,area_id,now)
-        first=next((e.get('position') for e in state['world']['entities']
-                    if self.world._area(e)==area_id and e.get('templateType')=='workshop'),None)
-        if not first:raise NotImplementedError('Destination workshop location missing in authored data')
-        for index,person in enumerate(people):
-            if self.world._area(person)==area_id:continue
-            person['position']={**first,'areaId':area_id,
-                                 'x':float(first['x'])+40*(index+1)}
-            person['updatedAt']=now
-        state['revision']=int(state.get('revision',0))+1
-        return {}
+        moving = {person['id']: person for person in people if self.world._area(person) != area_id}
+        reply = {'villagers': [{'id': person['id']} for person in people],
+                 'position': {'areaId': area_id}}
+        if not moving:
+            return reply
+        if any(job.get('villagerId') in moving and job.get('status') != 'harvested'
+               for job in state.get('workAreas', {}).values()):
+            raise ValueError('Collect existing villager work before transfer')
+        entities = state['world']['entities']
+        if any(entity.get('lightingVillagerId') in moving and now < entity.get('lightingCompleteAt', 0)
+               for entity in entities):
+            raise ValueError('Finish lighting the fire before transferring its villager')
+
+        self.seed(state, area_id, now)
+        first = next((e['position'] for e in entities
+                      if self.world._area(e) == area_id and e.get('templateType') == 'workshop'), None)
+        if first is None:
+            raise ValueError('Destination workshop location is missing')
+        occupied = {(person['position']['x'], person['position']['y']) for person in actors.values()
+                    if self.world._area(person) == area_id}
+        # Beds belong to shelters in the old area. Keep the shelters and all
+        # other occupants, and let the transferred villagers find new beds.
+        for shelter in entities:
+            if shelter.get('templateType') != 'shelter':
+                continue
+            for bed in shelter.get('beds', []):
+                person = moving.get(bed.get('villagerId'))
+                if person is not None and self.world._area(person) == self.world._area(shelter):
+                    OriginalHabitatRules.release_bed(person, shelter, bed)
+        x, y = float(first['x']), first['y']
+        for person in moving.values():
+            x += 40
+            while (x, y) in occupied:
+                x += 40
+            person['shelterBedId'] = ''
+            person['position'] = {'x': x, 'y': y, 'rotation': first.get('rotation', 0), 'areaId': area_id}
+            person['updatedAt'] = now
+        state['user']['maxAreaId'] = max(area_id, maximum)
+        state['revision'] = int(state.get('revision', 0)) + 1
+        return reply

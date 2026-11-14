@@ -84,3 +84,8 @@ windows/installer/.stage/
 windows/installer/.work/
 .windows-test/
 *.log
+
+# Local Windows builds and test runtimes
+/.test-tmp/
+/windows/launcher/bin/
+/windows/launcher/obj/

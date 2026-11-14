@@ -86,7 +86,16 @@ class OriginalClientSessions:
                            (token,now,key))
                 ident=ClientIdentity(row['account_id'],row['village_id'],row['numeric_player_id'],token)
             else:
-                imported=db.execute('SELECT * FROM legacy_imports WHERE legacy_key=?',(key,)).fetchone()
+                slot = db.execute("SELECT value FROM metadata WHERE key='legacy_launch_copy'").fetchone()
+                if slot is not None:
+                    if db.execute('SELECT 1 FROM original_client_devices LIMIT 1').fetchone():
+                        raise InvalidAction('Open this imported village with the BlueStacks instance that first loaded it.')
+                    legacy_key = json.loads(slot['value'])['key']
+                else:
+                    legacy_key = key
+                imported=db.execute('SELECT * FROM legacy_imports WHERE legacy_key=?',(legacy_key,)).fetchone()
+                if slot is not None and imported is None:
+                    raise InvalidAction('The selected imported village is unavailable.')
                 if imported:
                     account_id=imported['account_id'];village_id=imported['village_id']
                     stored=json.loads(db.execute('SELECT payload_json FROM villages WHERE village_id=?',(village_id,)).fetchone()[0])

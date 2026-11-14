@@ -18,7 +18,7 @@ from villagelife.persistence.sqlite_store import SqliteSaveRepository
 from villagelife.services.dispatcher import ActionDispatcher
 from villagelife.services.jobs import WorldTickCoordinator
 from villagelife.core.clock import SystemClock
-from villagelife.support import record_missing
+from villagelife.support import begin_diagnostic_run, record_missing
 from villagelife.protocol.legacy_codec import decode as original_decode, encode as original_encode
 
 LOG = logging.getLogger(__name__)
@@ -122,7 +122,11 @@ class ApiHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             path = urlsplit(self.path).path
-            if self.server.original and path in {'/web/ClientService/Login', '/web/ClientService/Process'}:
+            if self.server.original and path.rstrip('/') in {
+                '/web/ClientService/Login', '/web/ClientService/Process',
+                '/Playdemic.Community.Web/Client/Home', '/web/Playdemic.Community.Web/Client/Home',
+            }:
+                path = path.rstrip('/')
                 return self._original_post(path)
             if path.startswith('/web/'):
                 self._record_missing('POST', path, 501)
@@ -211,6 +215,8 @@ class ApiHandler(BaseHTTPRequestHandler):
         try:
             if path.endswith('/Login'):
                 response=self.server.original.login(request)
+            elif path.endswith('/Client/Home'):
+                response=self.server.original.community.process(request)
             else:
                 response=self.server.original.process(request)
             return self._binary(200,original_encode(response,compressed=mode=='zlib-xor'))
@@ -252,5 +258,6 @@ class ApiHandler(BaseHTTPRequestHandler):
 
 def serve(repo: SqliteSaveRepository, port: int = 8765, *, original=None, assets=None) -> None:
     with ApiServer(('127.0.0.1', port), repo, original, assets) as server:
+        begin_diagnostic_run(repo)
         LOG.info('Village Life new API listening on 127.0.0.1:%d', port)
         server.serve_forever(poll_interval=0.2)

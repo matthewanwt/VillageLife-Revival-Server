@@ -28,8 +28,16 @@ class OriginalDefinitions:
     def rows(self, table: str) -> list[dict]:
         return [json.loads(s) for s in self._cached(table)]
 
+    @lru_cache(maxsize=160)
+    def _indexed(self, table: str) -> dict[str, str]:
+        index = {}
+        for row in self.rows(table):
+            index.setdefault(str(row.get('id')), json.dumps(row))
+        return index
+
     def item(self, table: str, key: str | int) -> dict:
-        return next((v for v in self.rows(table) if str(v.get('id'))==str(key)), None) or self._missing(table,key)
+        serialized = self._indexed(table).get(str(key))
+        return json.loads(serialized) if serialized is not None else self._missing(table,key)
 
     @staticmethod
     def _missing(table, key):

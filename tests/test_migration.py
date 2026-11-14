@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from villagelife.persistence.sqlite_store import SqliteSaveRepository
 from villagelife.persistence.legacy_import import LegacySaveImporter
+from villagelife.persistence.legacy_launcher import import_copy, preview, protect_original_instance, saved_copies
+from villagelife.protocol.original_client.sessions import OriginalClientSessions
 from villagelife.services.dispatcher import ActionDispatcher
 from villagelife.core.errors import InvalidAction
 
@@ -48,6 +50,53 @@ class MigrationTests(unittest.TestCase):
         importer.import_directory(self.source, apply=True)
         self.save_path.write_text(json.dumps({**self.save, 'changed': True}), encoding='utf-8')
         self.assertIn('CONFLICT', importer.import_directory(self.source, apply=True)[0].status)
+
+
+    def test_launcher_copy_survives_device_change_and_keeps_current_village(self):
+        old_install = self.root / '0.2.6'
+        source = old_install / 'backend' / 'private_state'
+        source.mkdir(parents=True)
+        (old_install / 'play-settings.json').write_text('{"instance":"Pie64_2"}', encoding='utf-8')
+        key = OriginalClientSessions.device_key(self.profile['deviceId'])
+        profile = source / (key + '.json')
+        save = source / (key + '.tutorial.json')
+        profile.write_text(json.dumps(self.profile), encoding='utf-8')
+        data = {'version': 1, 'userHash': {'activeSequence': 10, 'data': {'villagers': []}}}
+        save.write_text(json.dumps(data), encoding='utf-8')
+        storage = self.root / 'imported-villages'
+        current = OriginalClientSessions(self.repo).login('new-instance')[0]
+
+        candidate, = preview(old_install)['villages']
+        self.assertEqual(candidate['source_instance'], 'Pie64_2')
+        self.assertFalse(storage.exists())
+        args = old_install, storage, key, candidate['fingerprint']
+        import_copy(*args)
+        self.assertEqual(import_copy(*args)['status'], 'already-imported')
+        self.assertEqual(saved_copies(storage), [candidate])
+        with self.assertRaisesRegex(ValueError, 'original 0.2.6 instance'):
+            protect_original_instance(storage, 'Pie64_2')
+
+        copied = SqliteSaveRepository(storage / (key + '.sqlite3'))
+        identity, _, payload = OriginalClientSessions(copied).login('new-instance')
+        self.assertEqual(identity.player_id, '1001')
+        self.assertNotEqual(identity.village_id, current.village_id)
+        self.assertEqual(payload['originalSave'], data)
+        self.assertEqual(OriginalClientSessions(self.repo).login('new-instance')[0].village_id,
+                         current.village_id)
+        self.assertEqual(OriginalClientSessions(copied).login('new-instance')[0].village_id,
+                         identity.village_id)
+        with self.assertRaises(InvalidAction):
+            OriginalClientSessions(copied).login('another-instance')
+        self.assertEqual(json.loads(save.read_bytes()), data)
+        self.assertEqual(json.loads(profile.read_bytes()), self.profile)
+
+        save.write_text(json.dumps({**data, 'changed': True}), encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'changed after preview'):
+            import_copy(*args)
+        updated, = preview(source)['villages']
+        with self.assertRaisesRegex(ValueError, 'imported before'):
+            import_copy(source, storage, key, updated['fingerprint'])
+        self.assertEqual(copied.read_village(identity.village_id).payload['originalSave'], data)
 
 
 if __name__ == '__main__':

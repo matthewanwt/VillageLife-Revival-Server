@@ -1,13 +1,67 @@
 """Original material inventory wire projection and unlock milestones."""
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+from functools import cached_property
+import json
+
 from .catalog import OriginalDefinitions
+
+
+class InsufficientGems(ValueError):
+    def __init__(self, cost, balance):
+        self.cost = cost
+        self.balance = balance
+        self.shortfall = cost - balance
+        super().__init__(
+            f'This action costs {cost:g} gems. You have {balance:g} and need {self.shortfall:g} more.')
+
+    def reply(self):
+        return {'error': 'INSUFFICIENT_GEMS', 'gemsRequired': self.cost,
+                'gemsAvailable': self.balance, 'gemsShortfall': self.shortfall}
+
+
+def spend_gems(state, cost):
+    if not cost:
+        return
+    try:
+        balance = Decimal(str(state['inventory'].get('323', 0)))
+    except InvalidOperation as exc:
+        raise ValueError('Invalid gem balance') from exc
+    if not balance.is_finite() or balance < 0:
+        raise ValueError('Invalid gem balance')
+    if balance < cost:
+        raise InsufficientGems(cost, float(balance))
+    remaining = balance - cost
+    state['inventory']['323'] = int(remaining) if remaining == remaining.to_integral_value() else float(remaining)
 
 
 class OriginalInventoryRules:
     def __init__(self, definitions: OriginalDefinitions):
         self.defs = definitions
         self._ancestors: dict[tuple[str, int], frozenset[str]] | None = None
+
+    @cached_property
+    def starter_tools(self) -> dict[str, float]:
+        seed = next((json.loads(row['dataJSON'])['inventory']
+                     for row in self.defs.rows('seq_state_tablet_ftue')
+                     if row.get('sequenceType') == '64'
+                     and 'inventory' in json.loads(row['dataJSON'])), {})
+        recipes = {row['rewardSet'] for row in self.defs.rows('task') if row['taskType'] == '1'}
+        craftable = {row['materialType'] for row in self.defs.rows('reward_set_item')
+                     if row['setId'] in recipes and float(row['quantity']) > 0 and float(row['chance']) > 0}
+        return {key: float(amount) for key, amount in seed.items()
+                if float(amount) > 0 and key not in craftable
+                and self.defs.item('material_type', key)['categoryId'] == '12'}
+
+    def restore_starter_tools(self, state: dict) -> None:
+        tools = self.starter_tools
+        if not tools:
+            return
+        inventory = state.setdefault('inventory', {})
+        for key, amount in tools.items():
+            if inventory.get(key, 0) < amount:
+                inventory[key] = amount
 
     def _building_ancestors(self) -> dict[tuple[str, int], frozenset[str]]:
         if self._ancestors is not None:
@@ -16,12 +70,14 @@ class OriginalInventoryRules:
         result: dict[tuple[str, int], set[str]] = {}
         for foundation in foundations.values():
             current = foundation
+            building = self.defs.item('building_type', foundation['buildingType'])
+            key = (building['entityRef'], int(building['entityID']))
+            materials = result.setdefault(key, set())
             seen = set()
             while current['id'] not in seen:
                 seen.add(current['id'])
                 building = self.defs.item('building_type', current['buildingType'])
-                key = (building['entityRef'], int(building['entityID']))
-                result.setdefault(key, set()).add(str(building['materialType']))
+                materials.add(str(building['materialType']))
                 parent = current.get('parentId', '-1')
                 if parent == '-1' or parent not in foundations:
                     break
@@ -38,7 +94,24 @@ class OriginalInventoryRules:
         maximum = int(state.get('user', {}).get('maxAreaId', state.get('areaId', 0)))
         found.update(material for material, area in (('231', 1), ('232', 2), ('1536', 3))
                      if maximum >= area)
+        if state.get('transitionKey') == 'bridge-1-to-2':
+            found.add('130')
         return found
+
+    def requirement_quantity(self, state: dict, material: str, milestones: set[str]) -> Decimal:
+        if material == '7':
+            return Decimal(str(state.get('user', {}).get('xp', 0)))
+        return max(Decimal(str(state.get('inventory', {}).get(material, 0))),
+                   Decimal(int(material in milestones)))
+
+    @staticmethod
+    def is_unlocked(state: dict, key: str, definition: dict, milestones: set[str]) -> bool:
+        if key in milestones:
+            return True
+        record = state.get('materialLearning', {}).get(key)
+        if record is not None:
+            return record['status'] == 'unlocked'
+        return key in state.get('inventory', {}) or int(definition.get('learnDurationSec', '0')) == 0
 
     def list_items(self, state: dict) -> list[dict]:
         inventory = state.get('inventory', {})
@@ -50,9 +123,7 @@ class OriginalInventoryRules:
             ident = int(raw)
             definition = self.defs.item('material_type', ident)
             record = learning.get(str(raw))
-            is_unlocked = (record['status'] == 'unlocked' if record else
-                           str(raw) in inventory or str(raw) in milestones or
-                           int(definition.get('learnDurationSec', '0')) == 0)
+            is_unlocked = self.is_unlocked(state, raw, definition, milestones)
             result.append({'materialTypeId': ident,
                            'amount': max(inventory.get(str(raw), 0), int(str(raw) in milestones)),
                            'isUnlocked': bool(is_unlocked),

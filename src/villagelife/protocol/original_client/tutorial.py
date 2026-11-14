@@ -10,6 +10,9 @@ import time
 from villagelife.protocol.original_client.catalog import OriginalDefinitions
 from villagelife.protocol.original_client.randomness import new_state, choice
 
+STARTING_GEMS = 1000
+
+
 class TutorialRules:
     def __init__(self, definitions: OriginalDefinitions):
         self.defs=definitions
@@ -40,7 +43,7 @@ class TutorialRules:
         if {v['refId'] for v in villagers}!=required:
             raise ValueError('Original FTUE definitions inconsistent: missing villagers')
         return {'version':1,'rng':rng,'userHash':{'activeSequence':0,'segmentId':0,'data':{'villagers':villagers}},
-                'gameSettings':{},'shelters':{}}
+                'gameSettings':{},'shelters':{},'startingGemGrant':STARTING_GEMS}
 
     def sequences(self) -> set[int]:
         if self._sequences is None:
@@ -72,6 +75,8 @@ class TutorialRules:
         if service=='ClientSettingService/GetUserGameSettings':
             values=dict(save.get('gameSettings') or {})
             if 'activeSequenceId' in values:values['activeSequence']=values['activeSequenceId']
+            if isinstance(save.get('normal'), dict):
+                values['lastViewedArea'] = str(save['normal']['areaId'])
             return {'gameSettings':[{'key':k,'value':v} for k,v in values.items()]},False
         if service=='ClientSettingService/SaveGameSetting':
             key=data.get('key');value=data.get('value')

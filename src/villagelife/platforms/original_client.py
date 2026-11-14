@@ -35,8 +35,10 @@ def _adb_install_succeeded(result: subprocess.CompletedProcess[bytes]) -> bool:
 
 
 def _run(args: list[str], *, timeout: int = 90) -> subprocess.CompletedProcess[bytes]:
+    hidden = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
     try:
-        return subprocess.run(args, capture_output=True, timeout=timeout, check=False)
+        return subprocess.run(args, capture_output=True, timeout=timeout, check=False,
+                              creationflags=hidden)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise bluestacks.InstanceError('VL-ADB-UNAVAILABLE', 'ADB command failed or timed out') from exc
 
@@ -140,7 +142,15 @@ def guest_network_evidence(binding: Path) -> dict[str, str]:
     return output
 
 
-def launch(binding: Path) -> None:
+def stop_game(binding: Path) -> None:
+    stopped = _adb(binding, ['shell', 'am', 'force-stop', PACKAGE], timeout=15)
+    if stopped.returncode:
+        raise bluestacks.InstanceError('VL-GAME-RESTART-FAILED', 'Android could not close Village Life')
+
+
+def launch(binding: Path, *, restart: bool = False) -> None:
+    if restart:
+        stop_game(binding)
     result = _adb(binding, ['shell', 'monkey', '-p', PACKAGE, '1'], timeout=30)
     if result.returncode or b'Events injected: 1' not in result.stdout:
         raise bluestacks.InstanceError('VL-GAME-LAUNCH-FAILED', 'Android could not start Village Life')

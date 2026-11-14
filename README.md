@@ -13,7 +13,13 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe tools\smoke_new_backend.py
+.\.venv\Scripts\python.exe tools\smoke_original_diagnostics.py
 ```
+
+`smoke_original_diagnostics.py` creates a disposable synthetic original-client
+save and exercises compressed/XOR framing, selected RPCs, replay handling,
+account isolation, and the privacy-safe diagnostic export. It does not use
+BlueStacks, the original APK, private game tables, or an existing save.
 
 For the original-wire smoke test, supply the **locally extracted** original definitions database. Do not add it to Git:
 
@@ -41,11 +47,17 @@ The private XAPK can live under `private-assets/` (Git-ignored). Run `tools/prep
 
 This is a read-only dry run. Use `--apply` only on a **backup copy** with a new, separately backed-up database. Existing save payloads and unknown fields are retained as opaque data and are not yet fully translated into verified playable game semantics. See `docs/SAVE_MIGRATION.md`.
 
-## Windows installer
+## Windows reliability-test installer
 
-**The Inno Setup build is deliberately blocked** with `VL-INSTALLER-NOT-READY` until the real original APK completes launch, gameplay and save/reload against the new backend, the guided BlueStacks/XAPK setup is implemented, and safe Wi-Fi-on guest network isolation is established. You requested no incomplete installer, so an API-only EXE is not presented as a finished product.
+`windows/installer/Build-TestInstaller.ps1` builds a private **reliability-test** installer, not a finished game release. At your direction, the handoff bundle includes the supplied XAPK and required game table/inventory data, the new backend, launcher, and Java signing tools. The OBB is extracted from the XAPK on first setup to avoid a duplicate copy. The old 2.11 server is neither included nor a fallback.
 
-The future single installer must use the **new** backend, offer first-run instance selection/creation guidance and XAPK installation, and keep user saves in `%LOCALAPPDATA%` across updates. The previous 2.11 server is neither included nor a fallback.
+First use requires a dedicated BlueStacks Pie64 instance. The launcher labels the build as unfinished, warns before replacing an installed original-signed app, and keeps saves, prepared files, and the local signing identity in `%LOCALAPPDATA%\VillageLifeRevivalNext`. Current gameplay failures are expected; guest network isolation is not certified. The production/release installer remains blocked until actual game launch, gameplay, save/reload, upgrades, clean-machine setup, and network isolation have been verified.
+
+Build the private test installer from PowerShell with Python dependencies, .NET 10, Inno Setup 6, and the downloaded JDK:
+
+```powershell
+.\windows\installer\Build-TestInstaller.ps1
+```
 
 ## Repository and preservation
 

@@ -11,7 +11,7 @@ import struct
 from decimal import Decimal, ROUND_HALF_UP
 
 from .catalog import OriginalDefinitions
-from .inventory import OriginalInventoryRules
+from .inventory import OriginalInventoryRules, spend_gems
 from .randomness import new_state, randbelow
 
 
@@ -39,7 +39,7 @@ class OriginalEconomyRules:
         return {'inventory': items, 'userMaterialTypes': items,
                 'result': {'inventory': items, 'userMaterialTypes': items}}
 
-    def _remember(self, state: dict, bucket: str, key: str, request: dict) -> bool:
+    def _remember(self, state: dict, bucket: str, key: str, request: dict, *, gem_cost: int = 0) -> bool:
         if not key:
             raise ValueError('Original call identifier required')
         previous = state.setdefault(bucket, {}).get(key)
@@ -47,6 +47,7 @@ class OriginalEconomyRules:
             if previous != request:
                 raise ValueError('Original call identifier reused with different content')
             return False
+        spend_gems(state, gem_cost)
         state[bucket][key] = copy.deepcopy(request)
         return True
 
@@ -68,13 +69,8 @@ class OriginalEconomyRules:
         if price <= 0:
             raise NotImplementedError('Original calculation gives no positive direct gem price')
         request = {'materialTypeId': material_id, 'amount': amount, 'gemsSpent': price}
-        if not self._remember(state, 'materialPurchaseReceipts', receipt, request):
+        if not self._remember(state, 'materialPurchaseReceipts', receipt, request, gem_cost=price):
             return self._inventory_response(state)
-        gems = self._number(state['inventory'].get('323', 0))
-        if gems < price:
-            del state['materialPurchaseReceipts'][receipt]
-            raise ValueError('Not enough gems')
-        state['inventory']['323'] = float(gems - price)
         state['inventory'][str(material_id)] = float(self._number(state['inventory'].get(str(material_id), 0)) + amount)
         state['revision'] = int(state.get('revision', 0)) + 1
         return self._inventory_response(state)
@@ -88,12 +84,8 @@ class OriginalEconomyRules:
         if cost <= 0 or amount <= 0:
             raise ValueError('Invalid original store definition')
         request = {'storeItemId': item_id, 'multiples': multiples, 'gemsSpent': cost}
-        if not self._remember(state, 'storePurchaseReceipts', receipt, request):
+        if not self._remember(state, 'storePurchaseReceipts', receipt, request, gem_cost=cost):
             return self._inventory_response(state)
-        if self._number(state['inventory'].get('323', 0)) < cost:
-            del state['storePurchaseReceipts'][receipt]
-            raise ValueError('Not enough gems for this store item')
-        state['inventory']['323'] = float(self._number(state['inventory']['323']) - cost)
         key = str(item['material_type'])
         state['inventory'][key] = float(self._number(state['inventory'].get(key, 0)) + amount)
         state['revision'] = int(state.get('revision', 0)) + 1

@@ -77,6 +77,12 @@ CREATE TABLE IF NOT EXISTS original_call_request_outcomes (
   count INTEGER NOT NULL, last_seen INTEGER NOT NULL,
   PRIMARY KEY(service_shape, response_code, request_shape, response_shape)
 );
+CREATE TABLE IF NOT EXISTS diagnostic_run_outcomes (
+  run_id TEXT NOT NULL, method TEXT NOT NULL, endpoint_shape TEXT NOT NULL,
+  response_code INTEGER NOT NULL, request_shape TEXT NOT NULL, response_shape TEXT NOT NULL,
+  count INTEGER NOT NULL, last_seen INTEGER NOT NULL,
+  PRIMARY KEY(run_id, method, endpoint_shape, response_code, request_shape, response_shape)
+);
 CREATE TABLE IF NOT EXISTS metadata (
   key TEXT PRIMARY KEY, value TEXT NOT NULL
 );
@@ -90,6 +96,7 @@ class SqliteSaveRepository:
     No save mutation occurs without an explicit transaction.
     """
     def __init__(self, path: str | Path):
+        self.diagnostic_run: str | None = None
         self.path = Path(path).expanduser().resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:

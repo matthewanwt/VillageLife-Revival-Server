@@ -21,6 +21,25 @@ def _actors(world:dict)->list[dict]:
     return [e for e in world.get('world',{}).get('entities',[])
             if e.get('templateType')=='villager_type' and isinstance(e.get('id'),str)]
 
+def _new_suffix(owner, ident, used):
+    value = int(hashlib.sha256(f'{owner}:{ident}'.encode()).hexdigest()[:6], 16) or 1
+    while value in used:
+        value = value % 0xffffff + 1
+    used.add(value)
+    return str(value)
+
+
+def reserve_ids(world, owner, pending):
+    outward, _ = mappings(world, owner)
+    registry = world.setdefault('nativeIdentityIds', {}).setdefault(owner, {})
+    registry.update({ident: native.rsplit('_', 1)[1] for ident, native in outward.items()})
+    used = {int(v) for v in registry.values()}
+    for ident in pending:
+        if ident not in registry:
+            registry[ident] = _new_suffix(owner, ident, used)
+    return registry
+
+
 def mappings(world:dict,owner:str)->tuple[dict[str,str],dict[str,str]]:
     registry=world.get('nativeIdentityIds',{}).get(str(owner),{})
     used={int(x) for x in registry.values()}
@@ -30,9 +49,7 @@ def mappings(world:dict,owner:str)->tuple[dict[str,str],dict[str,str]]:
     for actor in _actors(world):
         ident=actor['id'];suffix=registry.get(ident)
         if suffix is None:
-            value=int(hashlib.sha256(f'{owner}:{ident}'.encode()).hexdigest()[:6],16) or 1
-            while value in used:value=value%0xffffff+1
-            used.add(value);suffix=str(value)
+            suffix=_new_suffix(owner, ident, used)
         native=f'Villager_{owner}_{suffix}'
         outward[ident]=native;inward[native]=ident;inward[str(suffix)]=ident
         legacy=str(int(hashlib.sha256(f'{owner}:{ident}'.encode()).hexdigest()[:12],16)+1)

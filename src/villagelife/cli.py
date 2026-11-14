@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from villagelife.core.errors import InvalidAction
 from villagelife.core.model import empty_native_village
 from villagelife.persistence.sqlite_store import SqliteSaveRepository
 from villagelife.persistence.auth_store import AccountTokens
@@ -44,6 +45,11 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument('--xapk', type=Path, help='User-supplied original XAPK to read the original manifest')
     a.add_argument('--obb', type=Path, help='User-supplied OBB for original resource responses')
     a.add_argument('--inventory', type=Path, help='Resource-offset inventory for the OBB')
+    a = sub.add_parser('preview-legacy-villages'); a.add_argument('folder', type=Path)
+    a = sub.add_parser('copy-legacy-village'); a.add_argument('folder', type=Path)
+    a.add_argument('key'); a.add_argument('fingerprint')
+    sub.add_parser('list-legacy-villages')
+    sub.add_parser('stop-original-game')
     sub.add_parser('list-instances')
     a = sub.add_parser('bind-instance'); a.add_argument('instance_id')
     sub.add_parser('verify-instance')
@@ -52,23 +58,43 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser('open-instance-manager')
     sub.add_parser('export-missing-requests')
     sub.add_parser('network-report')
-    sub.add_parser('verify-network')
+    a = sub.add_parser('verify-network'); a.add_argument('--port', type=int, choices=range(1, 65536), metavar='PORT')
     a = sub.add_parser('export-support'); a.add_argument('output', type=Path)
     a = sub.add_parser('install-prepared-client'); a.add_argument('--apk', type=Path, required=True); a.add_argument('--obb', type=Path, required=True); a.add_argument('--replace', action='store_true')
     sub.add_parser('check-original-game')
     a = sub.add_parser('probe-guest-backend'); a.add_argument('--port', type=int, default=80)
-    sub.add_parser('launch-original-game')
-    a = sub.add_parser('prepare-original-client'); a.add_argument('--xapk', type=Path, required=True); a.add_argument('--output', type=Path, required=True)
+    a = sub.add_parser('launch-original-game')
+    a.add_argument('--restart', action='store_true', help='Close only Village Life before launching it')
+    a = sub.add_parser('prepare-original-client'); a.add_argument('--xapk', type=Path, required=True); a.add_argument('--output', type=Path, required=True); a.add_argument('--java-home', type=Path)
+    a.add_argument('--prepare-data', action='store_true')
 
     args = parser.parse_args(argv)
     binding = default_db().parent/'bluestacks-binding.json'
+    legacy_storage = binding.parent / 'imported-villages'
+    if args.command in {'preview-legacy-villages', 'copy-legacy-village', 'list-legacy-villages'}:
+        from villagelife.persistence import legacy_launcher
+        if args.command == 'preview-legacy-villages':
+            result = legacy_launcher.preview(args.folder)
+        elif args.command == 'copy-legacy-village':
+            result = legacy_launcher.import_copy(args.folder, legacy_storage, args.key, args.fingerprint)
+        else:
+            result = legacy_launcher.saved_copies(legacy_storage)
+        print(json.dumps(result, ensure_ascii=True)); return 0
+    if args.command == 'stop-original-game':
+        from villagelife.platforms.original_client import stop_game
+        stop_game(binding); return 0
     if args.command == 'list-instances':
         print(json.dumps([vars(x) for x in bs.list_instances()], ensure_ascii=False)); return 0
     if args.command == 'bind-instance':
         selected = bs.select_by_id(bs.list_instances(), args.instance_id)
+        from villagelife.persistence.legacy_launcher import protect_original_instance
+        protect_original_instance(legacy_storage, selected.id)
         print(json.dumps(bs.bind_instance(binding, selected, bs.installation()), ensure_ascii=False)); return 0
     if args.command == 'verify-instance':
-        print('Verified:', bs.verify_binding(binding, bs.list_instances(), bs.installation()).id); return 0
+        from villagelife.persistence.legacy_launcher import protect_original_instance
+        selected = bs.verify_binding(binding, bs.list_instances(), bs.installation())
+        protect_original_instance(legacy_storage, selected.id)
+        print('Verified:', selected.id); return 0
     if args.command == 'start-instance':
         print('Started:', bs.start_bound_instance(binding)); return 0
     if args.command == 'adb-check':
@@ -80,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report(binding), indent=2)); return 0
     if args.command == 'verify-network':
         from villagelife.platforms.network import report
-        print(json.dumps(report(binding, guest_checks=True), indent=2)); return 0
+        print(json.dumps(report(binding, guest_checks=True, local_port=args.port), indent=2)); return 0
     if args.command == 'export-support':
         from villagelife.support import export_support
         print('Created:', export_support(args.output, binding)); return 0
@@ -95,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
         probe_local_server(binding, args.port); print('Guest can reach the local backend (isolation remains unverified)'); return 0
     if args.command == 'launch-original-game':
         from villagelife.platforms.original_client import launch
-        launch(binding); print('Village Life launch requested'); return 0
+        launch(binding, restart=args.restart); print('Village Life launch requested'); return 0
     if args.command == 'prepare-original-client':
         # The preparation tool is deliberately a separate executable module so
         # signing code is never imported by the normal server process.
@@ -109,6 +135,10 @@ def main(argv: list[str] | None = None) -> int:
         saved = sys.argv
         try:
             sys.argv = [str(script), '--xapk', str(args.xapk), '--output', str(args.output)]
+            if args.java_home:
+                sys.argv += ['--java-home', str(args.java_home)]
+            if args.prepare_data:
+                sys.argv.append('--prepare-data')
             try:
                 runpy.run_path(str(script), run_name='__main__')
             except SystemExit as exc:
@@ -119,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     repo = SqliteSaveRepository(args.db)
     if args.command == 'export-missing-requests':
         from villagelife.support import export_missing
-        print('Created:', export_missing(repo)); return 0
+        print('Created:', export_missing(repo, current_run_only=True)); return 0
     if args.command == 'init-db':
         print('Database initialised:', repo.path)
     elif args.command == 'create-account':
@@ -173,7 +203,7 @@ def run(argv: list[str] | None = None) -> int:
     except bs.InstanceError as exc:
         print(str(exc), file=__import__('sys').stderr)
         return 2
-    except (FileNotFoundError, FileExistsError, ValueError) as exc:
+    except (FileNotFoundError, FileExistsError, ValueError, InvalidAction) as exc:
         print('[VL-USER-ACTION] '+type(exc).__name__+': '+str(exc)[:300], file=__import__('sys').stderr)
         return 2
     except OSError as exc:

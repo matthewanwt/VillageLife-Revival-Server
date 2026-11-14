@@ -2,6 +2,7 @@
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from villagelife.platforms.bluestacks import (parse_instances, select_by_id, bind_instance,
     verify_binding, InstanceError, Instance)
 from villagelife.platforms.network import report
@@ -44,6 +45,22 @@ class InstanceIsolationTests(unittest.TestCase):
             self.assertEqual(verify_binding(binding,changed,app).id,'Pie64_4')
             with self.assertRaises(InstanceError):select_by_id(changed,'Pie64')
 
+    def test_restart_force_stops_only_the_bound_game_before_launch(self):
+        from subprocess import CompletedProcess
+        from unittest.mock import call
+        from villagelife.platforms.original_client import PACKAGE, launch
+
+        binding = Path('selected-instance.json')
+        with patch('villagelife.platforms.original_client._adb', side_effect=[
+            CompletedProcess([],0,b'',b''),
+            CompletedProcess([],0,b'Events injected: 1',b''),
+        ]) as adb:
+            launch(binding,restart=True)
+        self.assertEqual(adb.call_args_list,[
+            call(binding,['shell','am','force-stop',PACKAGE],timeout=15),
+            call(binding,['shell','monkey','-p',PACKAGE,'1'],timeout=30),
+        ])
+
     def test_network_report_explicitly_disclaims_isolation(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder); config=root/'bluestacks.conf';config.write_text(CONFIG)
@@ -52,6 +69,24 @@ class InstanceIsolationTests(unittest.TestCase):
             self.assertFalse(result['guest_egress_verified'])
             self.assertFalse(result['changes_applied'])
             self.assertEqual(len(result['configured_instances']),2)
+
+    def test_diagnostics_distinguishes_a_stopped_backend_from_a_guest_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            config = root / 'bluestacks.conf'
+            config.write_text(CONFIG)
+            binding = root / 'binding.json'
+            with patch('villagelife.platforms.network._host_backend_ready',return_value=False), \
+                    patch('villagelife.platforms.original_client.probe_local_server') as probe:
+                output = report(binding,conf=config,local_port=80)
+                self.assertEqual(output['guest_to_local_check'],'backend_unavailable')
+                probe.assert_not_called()
+            with patch('villagelife.platforms.network._host_backend_ready',return_value=True), \
+                    patch('villagelife.platforms.original_client.probe_local_server',
+                          side_effect=InstanceError('VL-GUEST-BACKEND-UNREACHABLE','Unavailable')):
+                output = report(binding,conf=config,local_port=80)
+                self.assertEqual(output['guest_to_local_check'],'failed')
+                self.assertEqual(output['guest_to_local_error_code'],'VL-GUEST-BACKEND-UNREACHABLE')
 
 class SeparateInstanceDataTests(unittest.TestCase):
     def test_two_instance_bindings_and_separate_databases_never_mix(self):
