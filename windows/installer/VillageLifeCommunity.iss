@@ -10,14 +10,15 @@
 SetupIconFile=..\launcher\VillageLife.ico
 AppId=VillageLifeCommunityTest
 AppName=Village Life Community Test
-AppVersion=0.3.0
+AppVersion=0.3.2
 AppPublisher=Village Life Community Project
 DefaultDirName={localappdata}\Programs\VillageLifeCommunityTest
 DefaultGroupName=Village Life Community Test
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir={#OutputDir}
-OutputBaseFilename=VillageLife-Community-0.3.0-Part-III-of-III-Setup
+OutputBaseFilename=VillageLife-Community-0.3.2-Setup
+VersionInfoVersion=0.3.2
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

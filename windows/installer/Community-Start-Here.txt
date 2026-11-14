@@ -1,5 +1,4 @@
-VILLAGE LIFE COMMUNITY UPDATE 0.3.0
-Part III of III
+VILLAGE LIFE COMMUNITY UPDATE 0.3.2
 
 Close your previous launcher before starting this build.
 If you already use the SQLite reliability test, open the new launcher

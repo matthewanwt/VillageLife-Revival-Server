@@ -49,7 +49,7 @@ class InstanceIsolationTests(unittest.TestCase):
                 repair_prepared_obb(root / 'binding.json', root / 'client.apk', obb)
                 actions = [call.args[1] for call in adb.call_args_list]
                 self.assertEqual([args[:2] for args in actions],
-                                 [['shell', 'mkdir'], ['push', str(obb)], ['shell', 'mv']])
+                                 [['shell', 'mkdir'], ['push', str(obb.resolve(strict=True))], ['shell', 'mv']])
                 self.assertTrue(actions[1][-1].endswith('.vl-part'))
                 self.assertEqual(actions[2][-2], actions[1][-1])
 
