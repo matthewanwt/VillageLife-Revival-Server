@@ -29,9 +29,9 @@ class OriginalProgressionRules:
             limit = max(Decimal(row['order']) for row in targets)
         else:
             return False
-        effects = state.setdefault('scriptEffects', {})
-        inventory_done = effects.setdefault('inventoryAssignments', [])
-        xp_done = effects.setdefault('shrineXp', [])
+        effects = state.get('scriptEffects', {})
+        inventory_done = effects.get('inventoryAssignments', [])
+        xp_done = effects.get('shrineXp', [])
         pending_inventory = [row for row in steps if row['sequenceType'] == '64'
                              and Decimal('3') <= Decimal(row['order']) <= limit
                              and row['id'] not in inventory_done]
@@ -40,6 +40,10 @@ class OriginalProgressionRules:
                       and row['id'] not in xp_done]
         if not pending_inventory and not pending_xp:
             return False
+        # A no-op must not add metadata during a guarded Login migration.
+        effects = state.setdefault('scriptEffects', {})
+        inventory_done = effects.setdefault('inventoryAssignments', [])
+        xp_done = effects.setdefault('shrineXp', [])
         preserve_xp = complete and (int(state['user']['userLevelID']) > 1
                                     or state['user']['xp'] != 0)
         # Before FTUE completion the authored sequence writes exact inventory
