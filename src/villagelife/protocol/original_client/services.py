@@ -93,10 +93,10 @@ FUN_SERVICES={OriginalFunRules.SERVICE}
 SKILL_SERVICES={'ClientVillagerService/BuyVillagerSkill','ClientVillagerService/BuySkillsBundle'}
 
 class OriginalClientGame:
-    def __init__(self, repository:SqliteSaveRepository, definitions:OriginalDefinitions):
+    def __init__(self, repository:SqliteSaveRepository, definitions:OriginalDefinitions, *, selected_village=None):
         self.repo=repository
         self.defs=definitions
-        self.sessions=OriginalClientSessions(repository)
+        self.sessions=OriginalClientSessions(repository, selected_village=selected_village)
         self.tutorial=TutorialRules(definitions)
         self.world=OriginalWorldRules(definitions)
         self.life_stages=OriginalLifeStages(self.world)
@@ -119,7 +119,10 @@ class OriginalClientGame:
         self.fun=OriginalFunRules(definitions,self.materials)
 
     def login(self, request:dict)->dict:
-        ident,profile,stored=self.sessions.login(request.get('deviceId'))
+        try:
+            ident,profile,stored=self.sessions.login(request.get('deviceId'))
+        except PermissionError as exc:
+            return {'code':403,'message':str(exc),'data':{'users':[]}}
         if stored.get('originalSave') is None:
             fresh=self.tutorial.fresh()
             def initialize(payload):

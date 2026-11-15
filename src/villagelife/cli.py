@@ -46,6 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser('list-gem-villages')
     a = sub.add_parser('serve'); a.add_argument('--port', type=int, default=8765)
     a.add_argument('--launcher-stdin', action='store_true', help=argparse.SUPPRESS)
+    a.add_argument('--local-village-id', help='Open the explicitly selected local village for this server run')
     a.add_argument('--game-tables', type=Path, help='Enable original-client RPC using user-extracted game definitions')
     a.add_argument('--xapk', type=Path, help='User-supplied original XAPK to read the original manifest')
     a.add_argument('--obb', type=Path, help='User-supplied OBB for original resource responses')
@@ -272,10 +273,11 @@ def main(argv: list[str] | None = None) -> int:
             from villagelife.protocol.original_client.catalog import OriginalDefinitions
             from villagelife.protocol.original_client.services import OriginalClientGame
             from villagelife.protocol.original_client.assets import ClientAssets
-            original = OriginalClientGame(repo, OriginalDefinitions(args.game_tables))
+            original = OriginalClientGame(repo, OriginalDefinitions(args.game_tables),
+                                          selected_village=args.local_village_id)
             if args.xapk or args.obb or args.inventory:
                 assets = ClientAssets(xapk=args.xapk, obb=args.obb, inventory=args.inventory)
-        elif args.xapk or args.obb or args.inventory:
+        elif args.xapk or args.obb or args.inventory or args.local_village_id:
             parser.error('--game-tables is required with original game resources')
         try:
             serve(repo, args.port, original=original, assets=assets)

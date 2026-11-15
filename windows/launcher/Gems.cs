@@ -5,6 +5,9 @@ using System.Windows.Forms;
 namespace VillageLife;
 
 public sealed partial class VillageLifeWindow {
+    static string LocalVillageLabel(JsonElement row) =>
+        $"{row.GetProperty("name").GetString()} (level {row.GetProperty("level").GetInt32()}, {row.GetProperty("gems").GetDecimal():N0} gems) · saved {DateTimeOffset.FromUnixTimeSeconds(row.GetProperty("last_saved").GetInt64()).ToLocalTime():g}";
+
     async Task AddGems() {
         var settings=Read();
         var database=VillageDatabase(settings);
@@ -14,9 +17,10 @@ public sealed partial class VillageLifeWindow {
         var villages=list.RootElement.EnumerateArray().ToArray();
         if (villages.Length==0)
             throw new InvalidOperationException("Play through the tutorial to Woodland before adding gems.");
-        var labels=villages.Select(row=>$"{row.GetProperty("name").GetString()} (level {row.GetProperty("level").GetInt32()}, {row.GetProperty("gems").GetDecimal():N0} gems) · saved {DateTimeOffset.FromUnixTimeSeconds(row.GetProperty("last_saved").GetInt64()).ToLocalTime():g}").ToArray();
+        var labels=villages.Select(LocalVillageLabel).ToArray();
+        int current=Array.FindIndex(villages,row=>row.GetProperty("village_id").GetString()==settings.LocalVillage);
         int selected=villages.Length==1 ? 0 : PickVillage("Choose a village for Add Gems",
-            "This save contains multiple villages. Choose the one that should receive the gems.",labels,-1);
+            "This save contains multiple villages. Choose the one that should receive the gems.",labels,current);
         if (selected<0) return;
         var villageId=villages[selected].GetProperty("village_id").GetString()!;
         using var dialog=new Form {

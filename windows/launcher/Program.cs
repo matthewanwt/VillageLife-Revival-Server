@@ -11,7 +11,7 @@ internal static class Program { [STAThread] static void Main() { ApplicationConf
 public sealed partial class VillageLifeWindow : Form {
     const string ReleaseVersion = "0.3.2";
     const string ReleaseTitle = "Village Life Community Update " + ReleaseVersion;
-    sealed class Settings { public string GameTables { get; set; }=""; public string Xapk { get; set; }=""; public string Inventory { get; set; }=""; public string? Obb { get; set; } public int Port { get; set; }=80; public bool ClientPrepared { get; set; } public bool PreparedFilesReady { get; set; } public bool VillageChoiceMade { get; set; } public string ImportedVillage { get; set; }=""; }
+    sealed class Settings { public string GameTables { get; set; }=""; public string Xapk { get; set; }=""; public string Inventory { get; set; }=""; public string? Obb { get; set; } public int Port { get; set; }=80; public bool ClientPrepared { get; set; } public bool PreparedFilesReady { get; set; } public bool VillageChoiceMade { get; set; } public string ImportedVillage { get; set; }=""; public string LocalVillage { get; set; }=""; }
     readonly string root=Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName??AppContext.BaseDirectory;
     static string DefaultDatabase() {
         var alternate = Environment.GetEnvironmentVariable("VILLAGELIFE_DB");
@@ -187,6 +187,7 @@ public sealed partial class VillageLifeWindow : Form {
         await ToolQuiet("copy-legacy-village",picker.SelectedPath,key,entry.GetProperty("fingerprint").GetString()!);
         var settings = Read();
         settings.ImportedVillage=key;
+        settings.LocalVillage="";
         Write(settings);
         Log("Selected imported village: "+VillageLabel(entry));
         return true;
@@ -195,16 +196,25 @@ public sealed partial class VillageLifeWindow : Form {
         RequireStopped();
         using var list = await ReadVillageList("list-legacy-villages");
         var copies = list.RootElement.EnumerateArray().ToArray();
+        using var localList = File.Exists(defaultDatabase)
+            ? await ReadVillageList("--db",defaultDatabase,"list-gem-villages") : null;
+        var local = localList?.RootElement.EnumerateArray().ToArray() ?? [];
         var settings = Read();
-        var keys = new[] {""}.Concat(copies.Select(row=>row.GetProperty("key").GetString()!)).ToArray();
-        var choices = new[] {"Current village (created in the newer launcher)"}
-            .Concat(copies.Select(row=>"Imported from 0.2.6 — "+VillageLabel(row))).ToArray();
-        int picked = PickVillage("Choose Village","Select which village to open the next time you click Play.",
-                                 choices,Math.Max(0,Array.IndexOf(keys,settings.ImportedVillage)));
+        var choices = new List<(string Label,string Imported,string Local)> {
+            ("Use the village linked to the selected BlueStacks instance","","")
+        };
+        choices.AddRange(local.Select(row=>(
+            LocalVillageLabel(row),"",row.GetProperty("village_id").GetString()!)));
+        choices.AddRange(copies.Select(row=>(
+            "Imported from 0.2.6 — "+VillageLabel(row),row.GetProperty("key").GetString()!,"")));
+        int initial=choices.FindIndex(choice=>choice.Imported==settings.ImportedVillage && choice.Local==settings.LocalVillage);
+        int picked = PickVillage("Choose Village","Select a saved village to open on the selected BlueStacks instance when you click Play.",
+                                 choices.Select(choice=>choice.Label).ToArray(),Math.Max(0,initial));
         if (picked<0) return;
-        settings.ImportedVillage=keys[picked];
+        settings.ImportedVillage=choices[picked].Imported;
+        settings.LocalVillage=choices[picked].Local;
         Write(settings);
-        Log("Selected: "+choices[picked]);
+        Log("Selected: "+choices[picked].Label);
     }
     async Task BackupBeforeUpdate() {
         var database=VillageDatabase(Read());
@@ -217,6 +227,10 @@ public sealed partial class VillageLifeWindow : Form {
         if (backend is {HasExited:false}) return;
         var command=Command("--db",VillageDatabase(s),"serve","--launcher-stdin","--port",s.Port.ToString(),"--game-tables",s.GameTables,
                             "--xapk",s.Xapk,"--obb",s.Obb!,"--inventory",s.Inventory);
+        if (string.IsNullOrEmpty(s.ImportedVillage) && !string.IsNullOrEmpty(s.LocalVillage)) {
+            command.ArgumentList.Add("--local-village-id");
+            command.ArgumentList.Add(s.LocalVillage);
+        }
         command.RedirectStandardInput=true;
         backend=Process.Start(command)
                 ?? throw new IOException("Could not start the Village Life server");

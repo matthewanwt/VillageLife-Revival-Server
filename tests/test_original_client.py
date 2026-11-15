@@ -310,6 +310,39 @@ class OriginalClientHttpTests(unittest.TestCase):
         self.assertEqual(first['activeSequence'],217)
         self.assertEqual(first['data']['villagers'][0]['name'],'Example')
 
+    def test_explicit_village_opens_on_replacement_device_without_reassigning_saves(self):
+        from villagelife.protocol.original_client.sessions import OriginalClientSessions
+
+        automatic = self.server.original.sessions
+        original = self.login('original-device')
+        replacement = self.login('replacement-device')
+        identity = automatic.authenticate(original)
+
+        def prepare(payload):
+            payload['originalSave']['normal'] = {
+                'user': {'userLevelID': 19, 'scenarioId': 3},
+                'inventory': {'323': 137},
+            }
+            return {}
+
+        self.repo.mutate(identity.village_id,operation_key='fixture:restore-village',request={},change=prepare)
+        count = len(self.repo.list_all_villages())
+        selection = OriginalClientSessions(self.repo, selected_village=identity.village_id)
+        picked, profile, payload = selection.login('replacement-device')
+        self.assertEqual((picked.village_id, profile['pId'], profile['userLevelId'], profile['scenarioId']),
+                         (identity.village_id, original['pId'], 19, 3))
+        self.assertEqual(payload['originalSave']['normal']['inventory']['323'], 137)
+        self.assertEqual(selection.authenticate(profile), picked)
+        with self.assertRaises(PermissionError):
+            selection.login('another-device')
+        with self.assertRaises(PermissionError):
+            selection.authenticate(replacement)
+        _, refreshed, _ = selection.login('replacement-device')
+        self.assertNotEqual(refreshed['sessionId'], profile['sessionId'])
+        self.assertEqual(automatic.login('replacement-device')[0].player_id, replacement['pId'])
+        self.assertEqual(automatic.login('original-device')[0].player_id, original['pId'])
+        self.assertEqual(len(self.repo.list_all_villages()), count)
+
     def test_offline_consumption_does_not_create_an_empty_inbox_request(self):
         game = self.server.original
         profile = self.login('offline-inbox')

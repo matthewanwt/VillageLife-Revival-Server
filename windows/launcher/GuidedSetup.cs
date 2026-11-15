@@ -257,6 +257,7 @@ public sealed partial class VillageLifeWindow {
         var settings=await EnsureGame(Read());
         StopGameMonitoring();
         try {
+            await ToolQuietWithin(40,"stop-original-game");
             await StartServer(settings);
             SetStage(75,"Checking whether BlueStacks can reach the local game server…");
             string? lastProbeError=null;
@@ -280,7 +281,6 @@ public sealed partial class VillageLifeWindow {
             } catch (InvalidOperationException e) when (IsCode(e.Message,"VL-GUEST-PROBE-UNAVAILABLE")) {
                 Log(e.Message+"; checking the game’s actual sign-in instead.");
             }
-            await ToolQuietWithin(40,"stop-original-game");
             int baseline=await GameLogins(settings.Port);
             SetStage(90,"Opening Village Life and waiting for it to sign in…");
             await ToolQuietWithin(70,"launch-original-game");
