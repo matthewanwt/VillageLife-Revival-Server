@@ -253,20 +253,27 @@ class OriginalDatingRules:
 
     def generate(self, state, at, marriage):
         wishes = state.setdefault('wants', [])
-        active = {w['VillagerStringID'] for w in wishes if w.get('wantableCategoryType') == 5}
+        active = {w['VillagerStringID']: w for w in wishes if w.get('wantableCategoryType') == 5}
+        pending = {r['localVillagerId'] for r in state.get('npcDateRequests', []) if self.active(r, at)}
         interval = int(self.world.global_values.get('WantIntervalRelationship', 28800))
         changed = False
         for person in actors(state):
             ident = person['id']
-            if ident in active or self.world._area(person) != state['areaId']:
+            if self.world._area(person) != state['areaId']:
                 continue
-            if at - state.get('needSatisfiedAt', {}).get(f'{ident}:5', -interval) < interval:
-                continue
-            material = 340
-            if not self.dateable(person, at):
-                if not marriage.wish_available(state, person, at):
-                    continue
+            material = None
+            if self.dateable(person, at) and ident not in pending:
+                material = 340
+            elif marriage.wish_available(state, person, at):
                 material = 342
+            previous = active.get(ident)
+            if previous is not None:
+                if previous['MaterialID'] == material:
+                    continue
+                wishes.remove(previous)
+                changed = True
+            if material is None or at - state.get('needSatisfiedAt', {}).get(f'{ident}:5', -interval) < interval:
+                continue
             self.wants._append(state, person, 5, material, at)
             changed = True
         if changed:

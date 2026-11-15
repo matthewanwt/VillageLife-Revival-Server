@@ -5,6 +5,7 @@ Missing original-game mechanics return per-call 501 and appear in diagnostics.
 """
 from __future__ import annotations
 import copy
+import hashlib
 import logging
 import time
 import uuid
@@ -47,6 +48,7 @@ BIRTH_COST_CHECKS = BABY_CHARM_SERVICES | {
 
 OPTIONAL_EMPTY={'ClientAnalyticsService/Install','ClientAnalyticsService/Tutorial',
 'ClientAnalyticsService/Event','ClientAnalyticsService/Visit',
+'ClientDeviceService/SetDeviceInformation',  # Acknowledge push registration for offline play.
 'ClientAdvertisement/SyncVideoWatchedCount','ClientAdvertisement/PuppetShow',
 'ClientData/GetEmbedVideoData','ClientData/GetBannerData',
 'ClientData/GetGemSaleData'}
@@ -185,6 +187,7 @@ class OriginalClientGame:
                     'data':{'calls':[{'id':str(c.get('id','')),'code':403,'data':{},
                      'message':'Original-client session mismatch'} for c in calls]}}
         self.community.active_identity = ident
+        initial = self._resolve_blocked_birthdays(self.repo.read_village(ident.village_id))
         results=[]
         check_birth_cost = False
         for call in calls:
@@ -202,7 +205,7 @@ class OriginalClientGame:
                 code=501;message='Original gameplay rule not implemented: '+service
             else:
                 try:
-                    snapshot=self.repo.read_village(ident.village_id)
+                    snapshot=initial if not results else self.repo.read_village(ident.village_id)
                     world=(snapshot.payload.get('originalSave') or {}).get('normal')
                     outward,inward=mappings(world,ident.player_id) if isinstance(world,dict) else ({},{})
                     canonical=translate(data,inward)
@@ -232,7 +235,8 @@ class OriginalClientGame:
             results.append({'id':str(call.get('id','')),'code':code,
                             'data':response,'message':message})
         now = int(time.time())
-        state = (self.repo.read_village(ident.village_id).payload.get('originalSave') or {}).get('normal')
+        latest = self.repo.read_village(ident.village_id) if calls else initial
+        state = (latest.payload.get('originalSave') or {}).get('normal')
         messages = []
         if check_birth_cost and isinstance(state, dict):
             self._log_unaffordable_birth(state, now)
@@ -245,6 +249,28 @@ class OriginalClientGame:
                 messages = translate(notices, outward)
         return {'code':200,'currentTime':now,'messages':messages,
                 'data':{'calls':results}}
+
+    def _resolve_blocked_birthdays(self, snapshot):
+        at = int(time.time())
+        state = (snapshot.payload.get('originalSave') or {}).get('normal')
+        if not isinstance(state, dict):
+            return snapshot
+        due = sorted((person['id'], birthday)
+                     for person, birthday in self.life_stages.blocked_birthdays(state, at))
+        if not due:
+            return snapshot
+        signature = hashlib.sha256(repr(due).encode()).hexdigest()
+
+        def resolve(payload):
+            normal = payload['originalSave']['normal']
+            for person, _ in self.life_stages.blocked_birthdays(normal, at):
+                # The native dialog cannot submit a choice if every skill is mastered.
+                self.life_stages.complete(normal, person, 0, at)
+            return {}
+
+        updated, _, _ = self.repo.mutate(snapshot.village_id, operation_key=f'original:maxed-birthday:{signature}',
+                                         request={'action': 'complete-maxed-birthdays'}, change=resolve)
+        return updated
 
     def _log_unaffordable_birth(self, state, now):
         try:

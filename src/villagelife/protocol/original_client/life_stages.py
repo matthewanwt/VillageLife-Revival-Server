@@ -77,6 +77,29 @@ class OriginalLifeStages:
                 for person, message, body in self.notices(state, owner, at)
                 if not person.get('comingOfAgeMessageSeen')]
 
+    def available_skills(self, state):
+        maximum = int(state['user'].get('maxAreaId', state['areaId']))
+        return {int(row['id']) for row in self.world.defs.rows('villager_skill')
+                if int(row['id']) > 0 and 1 <= int(row.get('area', 0)) <= maximum}
+
+    def blocked_birthdays(self, state, at):
+        for person in actors(state):
+            if 'comingOfAgeSkill' in person or not person.get('skills'):
+                continue
+            birthday = self.ready(person, at)
+            if birthday is None:
+                continue
+            counts = Counter(map(skill_type, person['skills']))
+            available = self.available_skills(state)
+            if available and min(counts[skill] for skill in available) >= int(self.world.global_value('skill_slots_max')):
+                yield person, birthday
+
+    @staticmethod
+    def complete(state, person, skill, at):
+        person['comingOfAgeSkill'] = skill
+        person['comingOfAgeCompletedAt'] = at
+        touch(state, at)
+
     def choose_skill(self, state, data, at):
         person = actor(state, data.get('villagerId'))
         skill = data.get('skillTypeId')
@@ -97,16 +120,13 @@ class OriginalLifeStages:
             counts = Counter(map(skill_type, ranks))
             limit = int(self.world.global_value('skill_slots_max'))
             if counts[skill] >= limit:
-                if any(counts[int(row['id'])] < limit for row in self.world.defs.rows('villager_skill')
-                       if 1 <= int(row['area']) <= maximum):
+                if any(counts[choice] < limit for choice in self.available_skills(state)):
                     raise ValueError('This villager already mastered the chosen skill')
                 # Let the client finish the birthday when every available
                 # choice is full, retaining the existing ranks.
             else:
                 person['skills'] = [*ranks, {'skilltypeId': skill, 'skillOriginType': 0}]
-        person['comingOfAgeSkill'] = skill
-        person['comingOfAgeCompletedAt'] = at
-        touch(state, at)
+        self.complete(state, person, skill, at)
         return {}
 
     def acknowledge(self, state, service, data, owner, at):

@@ -52,9 +52,10 @@ class OriginalMarriageRules:
                    for r in state.get('npcDateRequests', [])):
             return False
         try:
-            return self.pair(state, person, target, at)['rarity'] <= int(person.get('rarity', 0))
+            self.pair(state, person, target, at)
         except (PermissionError, ValueError):
             return False
+        return True
 
     def record(self, state, data):
         ids = {str(data[k]) for k in ('RequestID', 'RequestStringID', 'userRequestId')
@@ -117,8 +118,6 @@ class OriginalMarriageRules:
         local_rarity, npc_rarity = int(person.get('rarity', 0)), int(target['rarity'])
         if str(data.get('stars')) not in {str(local_rarity), str(npc_rarity)}:
             raise ValueError('Wedding stars must match a saved partner')
-        if npc_rarity > local_rarity:
-            raise ValueError('Weddings hosted by a higher-star NPC village are unavailable')
         if self.free_places(state) < 1:
             raise ValueError('Village population capacity reached')
         ident = int(state.get('nextNpcMarriageRequestId', 2000000))

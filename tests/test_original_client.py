@@ -347,7 +347,8 @@ class OriginalClientHttpTests(unittest.TestCase):
                                  for i,group,gender in [(4,2,1),(5,2,0),(8,4,1),(9,4,0)]]}
         settings = {'communityDatesAvailable':'2', 'communityDatesExpiry':'500',
                     'date_return_time_seconds':'20', 'minAgeForDating':'18',
-                    'maxAgeForMarriage':'55', 'marriage_want_delay':'30', 'hours_per_year':'24'}
+                    'maxAgeForMarriage':'55', 'marriage_want_delay':'30', 'hours_per_year':'24',
+                    'WantIntervalRelationship':'5'}
         rows['global'] = [{'label':key, 'value':value} for key,value in settings.items()]
 
         def seed(payload):
@@ -378,7 +379,8 @@ class OriginalClientHttpTests(unittest.TestCase):
 
         with (patch.object(game.world,'global_values',settings),
               patch.object(game.defs,'rows',side_effect=rows.__getitem__),
-              patch.object(game.dating,'npc_skills',return_value=(0,[])),
+              patch.object(game.dating,'npc_skills',side_effect=[(2,[]), (0,[])]),
+              patch('villagelife.protocol.original_client.relationships.randbelow',return_value=0),
               patch('time.time',return_value=now) as clock):
             wishes = rpc('ClientWant/GenerateRelationshipWants')['result']
             self.assertEqual([w['MaterialID'] for w in wishes],[340,340])
@@ -394,19 +396,31 @@ class OriginalClientHttpTests(unittest.TestCase):
                 community('CharacterRequest/Create',invite)
                 community('CharacterRequest/Create',invite)
             self.assertEqual(community('CharacterRequest/GetReceived')['CharacterRequests'],[])
+            self.assertEqual(rpc('ClientWant/GenerateRelationshipWants')['result'],[])
             clock.return_value = now + 20
             dates = community('CharacterRequest/GetReceived')['CharacterRequests']
             self.assertEqual(len(dates),2)
+            for date in dates:
+                rpc('ClientRequest/AcceptDatingRequest',{'RequestID':date['ID']})
+            def restore_stale_wishes(payload):
+                payload['originalSave']['normal']['wants'] = [
+                    {**wish, 'VillagerStringID':f'local-{i}'} for i, wish in enumerate(wishes)]
+                return {}
+            self.repo.mutate(identity.village_id,operation_key='fixture:stale-dating-wishes',
+                             request={},change=restore_stale_wishes)
+            self.assertEqual(rpc('ClientWant/GenerateRelationshipWants')['result'],[])
+            clock.return_value = now + 50
+            self.assertEqual([w['MaterialID'] for w in rpc('ClientWant/GenerateRelationshipWants')['result']],
+                             [342,342])
             weddings = []
             for date in dates:
                 npc = next(npc for npc in roster if npc['user']['id']==date['ByUserID'])
-                rpc('ClientRequest/AcceptDatingRequest',{'RequestID':date['ID']})
                 proposal = rpc('ClientRequestService/SendMarriageRequest',{
                     'senderVillagerId':locals_by_suffix[date['CharacterID']],
                     'recipientVillagerId':npc['villager']['id'],
-                    'recipientUserId':npc['user']['id'], 'stars':'0'})['userRequest']
+                    'recipientUserId':npc['user']['id'], 'stars':str(npc['villager']['rarity'])})['userRequest']
                 weddings.append({'RequestID':proposal['id']})
-            clock.return_value = now + 40
+            clock.return_value = now + 70
             notices = rpc('ClientUserService/GetUserNotifications')['userNotifications']
             self.assertEqual([n['notificationTypeId'] for n in notices],[12,12])
             for wedding in weddings:
@@ -434,12 +448,14 @@ class OriginalClientHttpTests(unittest.TestCase):
         teen = {'id':'13','genderType':'1','minAge':'13','maxAge':'17','canWork':'1','name':'Teen'}
         rows = {'villager_type':[child,teen], 'villager_skill':[{'id':'2','area':'1'}]}
         globals_ = {'hours_per_year':'24','coming_of_age':'13','skill_slots_max':'3'}
+        mastered = [{'skilltypeId':2, 'skillOriginType':origin} for origin in (1,2,3)]
 
         def seed(payload):
+            person = {'id':'child','name':'Child','templateType':'villager_type',
+                      'templateId':11,'gender':1,'startAge':12,'bornAt':birthday-86400,'equipment':'test'}
             payload['originalSave']['normal'] = {
                 'areaId':1, 'user':{'maxAreaId':1},
-                'world':{'entities':[{'id':'child','name':'Child','templateType':'villager_type',
-                    'templateId':11,'gender':1,'startAge':12,'bornAt':birthday-86400,'equipment':'test'}]},
+                'world':{'entities':[person, {**person, 'id':'maxed', 'name':'Maxed', 'skills':mastered}]},
             }
             return {}
 
@@ -483,10 +499,12 @@ class OriginalClientHttpTests(unittest.TestCase):
                 'villagerIds':json.dumps({'villagerIds':[local]})},'11')
             self.assertEqual(result['villagerSkills'],[
                 {'villagerId':local,'skilltypeId':2,'skillOriginType':0}])
-        person = self.repo.read_village(identity.village_id).payload['originalSave']['normal']['world']['entities'][0]
+        person, maxed = self.repo.read_village(identity.village_id).payload['originalSave']['normal']['world']['entities']
         self.assertEqual((person['templateId'], person['startAge'], person['bornAt']),
                          (11, 12, birthday-86400))
         self.assertEqual(person['comingOfAgeCompletedAt'],birthday)
+        self.assertEqual((maxed['comingOfAgeSkill'], maxed['comingOfAgeCompletedAt']), (0, birthday))
+        self.assertEqual(maxed['skills'], mastered)
 
     def test_maxed_villager_can_complete_coming_of_age(self):
         from types import SimpleNamespace
