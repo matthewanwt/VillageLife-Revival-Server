@@ -21,7 +21,7 @@ from .buildings import OriginalBuildingRules
 from villagelife.protocol.original_client.economy import OriginalEconomyRules
 from villagelife.protocol.original_client.randomness import new_state
 from villagelife.protocol.original_client.inventory import OriginalInventoryRules, InsufficientGems
-from villagelife.protocol.original_client.collection import read_collection
+from villagelife.protocol.original_client.collection import COLLECT, collect_villager, read_collection
 from villagelife.protocol.original_client.villagers import OriginalVillagerRules
 from villagelife.protocol.original_client.progression import OriginalProgressionRules
 from villagelife.protocol.original_client.quests import OriginalQuestRules
@@ -204,7 +204,7 @@ class OriginalClientGame:
                 response={}
             elif service=='ClientAchievement/GetUserAchievements':
                 response={'result':[]}
-            elif service not in TUTORIAL_SERVICES|NORMAL_READ|ECONOMY_SERVICES|LEARNING_SERVICES|BUILDING_SERVICES|QUEST_SERVICES|USER_BUNDLE_SERVICES|PROGRESSION_SERVICES|WANT_SERVICES|DATING_SERVICES|MARRIAGE_SERVICES|FAMILY_SERVICES|BABY_CHARM_SERVICES|HABITAT_SERVICES|FUN_SERVICES|SKILL_SERVICES|{CHOOSE_SKILL, INTERACTIVE_SERVICE, 'ClientStartupService/ProcessOfflineConsumption', 'ClientUserService/ProgressArea', 'ClientUserService/UnlockArea', 'ClientVillagerService/MoveVillagers', 'ClientVillagerService/SetName', 'ClientTaskService/StartGatheringTask', 'ClientTaskService/StartCraftingTask', 'ClientTaskService/StartBuildingTask', 'ClientTaskService/StartFarmingTask', 'ClientTaskService/StartFishingTask', 'ClientTaskService/StartHuntingTask', 'ClientTaskService/HarvestTask', 'ClientTaskService/InstantCompleteTaskCurve', 'ClientVillager/Consume', 'ClientVillager/ReleaseXp'}:
+            elif service not in TUTORIAL_SERVICES|NORMAL_READ|ECONOMY_SERVICES|LEARNING_SERVICES|BUILDING_SERVICES|QUEST_SERVICES|USER_BUNDLE_SERVICES|PROGRESSION_SERVICES|WANT_SERVICES|DATING_SERVICES|MARRIAGE_SERVICES|FAMILY_SERVICES|BABY_CHARM_SERVICES|HABITAT_SERVICES|FUN_SERVICES|SKILL_SERVICES|{CHOOSE_SKILL, INTERACTIVE_SERVICE, COLLECT, 'ClientStartupService/ProcessOfflineConsumption', 'ClientUserService/ProgressArea', 'ClientUserService/UnlockArea', 'ClientVillagerService/MoveVillagers', 'ClientVillagerService/SetName', 'ClientTaskService/StartGatheringTask', 'ClientTaskService/StartCraftingTask', 'ClientTaskService/StartBuildingTask', 'ClientTaskService/StartFarmingTask', 'ClientTaskService/StartFishingTask', 'ClientTaskService/StartHuntingTask', 'ClientTaskService/HarvestTask', 'ClientTaskService/InstantCompleteTaskCurve', 'ClientVillager/Consume', 'ClientVillager/ReleaseXp'}:
                 code=501;message='Original gameplay rule not implemented: '+service
             else:
                 try:
@@ -435,6 +435,9 @@ class OriginalClientGame:
                         rng=save['rng']=new_state()
                     result=self.economy.daily_spin(normal,data,now,operation_key,
                                                    rng)
+            elif service == COLLECT:
+                if not normal:raise ValueError('Normal world required for collection acknowledgement')
+                result=collect_villager(normal,data)
             elif service in BUILDING_SERVICES:
                 normal=save.get('normal')
                 if not normal:raise ValueError('Normal world required')
