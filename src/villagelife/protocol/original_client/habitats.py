@@ -15,6 +15,7 @@ from .catalog import OriginalDefinitions
 from .daily import satisfy_wants
 from .inventory import OriginalInventoryRules
 from .world import OriginalWorldRules
+from .shelter_removal import SERVICE as REMOVE_SHELTER, remove_shelter
 
 
 SHELTER_INTERVAL = 86400
@@ -24,7 +25,7 @@ LEGACY_WOODLAND_SHELTERS = frozenset(range(34, 42))
 SERVICES = {
     'ClientUserFireService/StartFire', 'ClientUserFireService/OilFire',
     'ClientUserShelterService/AssignBedToVillager',
-    'ClientUserShelterService/EmptyBed',
+    'ClientUserShelterService/EmptyBed', REMOVE_SHELTER,
     'ClientUserShelterService/CollectShelterHappiness',
     'ClientUserShelterService/ResetHappinessTimer',
 }
@@ -343,6 +344,8 @@ class OriginalHabitatRules:
             response, action_changed = self._oil_fire(state, data, at)
         elif service.endswith('/AssignBedToVillager'):
             response, action_changed = self._assign(state, data, at)
+        elif service == REMOVE_SHELTER:
+            response, action_changed = remove_shelter(state, data, self.defs)
         elif service.endswith('/EmptyBed'):
             response, action_changed = self._empty(state, data)
         else:

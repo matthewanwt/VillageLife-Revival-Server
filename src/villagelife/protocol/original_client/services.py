@@ -92,6 +92,8 @@ BUILDING_SERVICES={'ClientBuildingService/CreateUserBuildingTask',
 FUN_SERVICES={OriginalFunRules.SERVICE}
 SKILL_SERVICES={'ClientVillagerService/BuyVillagerSkill','ClientVillagerService/BuySkillsBundle'}
 
+from .shelter_removal import SERVICE as REMOVE_SHELTER, validate_shelter_removal
+
 class OriginalClientGame:
     def __init__(self, repository:SqliteSaveRepository, definitions:OriginalDefinitions, *, selected_village=None):
         self.repo=repository
@@ -190,7 +192,25 @@ class OriginalClientGame:
                     'data':{'calls':[{'id':str(c.get('id','')),'code':403,'data':{},
                      'message':'Original-client session mismatch'} for c in calls]}}
         self.community.active_identity = ident
-        initial = self._resolve_blocked_birthdays(self.repo.read_village(ident.village_id))
+        initial = self.repo.read_village(ident.village_id)
+        # Native deletion can batch EmptyBed before DeleteUserShelter. Reject a
+        # protected/invalid removal before any call in that batch can commit.
+        # Separately submitted earlier EmptyBed requests cannot be rolled back.
+        try:
+            world = (initial.payload.get('originalSave') or {}).get('normal')
+            for removal in calls:
+                if removal.get('service') != REMOVE_SHELTER:
+                    continue
+                if not isinstance(world, dict) or not isinstance(removal.get('data'), dict):
+                    raise ValueError('Normal village and shelter data required')
+                _, inward = mappings(world, ident.player_id)
+                validate_shelter_removal(world, translate(removal['data'], inward),
+                                         self.defs, require_empty=False)
+        except (ValueError, KeyError, TypeError) as exc:
+            return {'code':200, 'currentTime':int(time.time()), 'messages':[],
+                    'data':{'calls':[{'id':str(c.get('id','')), 'code':400,
+                                     'data':{}, 'message':str(exc)[:200]} for c in calls]}}
+        initial = self._resolve_blocked_birthdays(initial)
         results=[]
         check_birth_cost = False
         for call in calls:
