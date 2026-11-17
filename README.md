@@ -4,7 +4,9 @@ This repository contains a **new server implementation** with an original Androi
 
 ## Play on Windows
 
-Download the Windows installer from [GitHub Releases](https://github.com/matthewanwt/VillageLife-Revival-Server/releases/latest). It includes the game archive and expansion, launcher, and local server. Install BlueStacks with a Pie 64-bit instance, then open the launcher and click **Play** for guided setup.
+**[Download the latest Windows release](https://github.com/matthewanwt/VillageLife-Revival-Server/releases/latest)** · **[Browse all versions](https://github.com/matthewanwt/VillageLife-Revival-Server/releases)**
+
+Open a release and look under **Assets** for the Windows setup EXE. It includes the game archive and expansion, launcher, and local server. Install BlueStacks with a Pie 64-bit instance, then open the launcher and click **Play** for guided setup.
 
 Close the game and launcher before updating. Keep a copy of your save. Use **Choose Village** to select an existing local village, including after changing BlueStacks instances. For a 0.2.6 backup, use **Import 0.2.6 Save** and choose the extracted `private_state` folder.
 
