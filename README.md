@@ -1,8 +1,14 @@
-# Village Life Revival | Independent Backend Development Build
+# Village Life Revival
 
 This repository contains a **new server implementation** with an original Android-client compatibility layer under `src/villagelife/protocol/original_client/`. It **does not** ship or invoke the old 2.11 backend. Original client materials are read from local, user-supplied files outside Git.
 
-**Current milestone, 10 November 2026:** original-format HTTP login, tutorial checkpoint and bridge, initial village startup, limited area and deterministic work operations, and independent SQLite saves have passed local automated/smoke tests. **It has not been verified to play the original XAPK on Windows.** The original game still requires many RPCs and world rules that are documented in `docs/ORIGINAL_OPERATION_COVERAGE.md` and `docs/REMAINING_GAMEPLAY.md`.
+## Play on Windows
+
+Download the Windows installer from [GitHub Releases](https://github.com/matthewanwt/VillageLife-Revival-Server/releases/latest). It includes the game archive and expansion, launcher, and local server. Install BlueStacks with a Pie 64-bit instance, then open the launcher and click **Play** for guided setup.
+
+Close the game and launcher before updating. Keep a copy of your save. Use **Choose Village** to select an existing local village, including after changing BlueStacks instances. For a 0.2.6 backup, use **Import 0.2.6 Save** and choose the extracted `private_state` folder.
+
+Gameplay coverage and known gaps are documented in `docs/ORIGINAL_OPERATION_COVERAGE.md` and `docs/REMAINING_GAMEPLAY.md`.
 
 ## Develop and test on Windows
 
@@ -51,7 +57,7 @@ This is a read-only dry run. Use `--apply` only on a **backup copy** with a new,
 
 `windows/installer/Build-TestInstaller.ps1` builds a private **reliability-test** installer, not a finished game release. At your direction, the handoff bundle includes the supplied XAPK and required game table/inventory data, the new backend, launcher, and Java signing tools. The OBB is extracted from the XAPK on first setup to avoid a duplicate copy. The old 2.11 server is neither included nor a fallback.
 
-First use requires a dedicated BlueStacks Pie64 instance. The launcher labels the build as unfinished, warns before replacing an installed original-signed app, and keeps saves, prepared files, and the local signing identity in `%LOCALAPPDATA%\VillageLifeRevivalNext`. Current gameplay failures are expected; guest network isolation is not certified. The production/release installer remains blocked until actual game launch, gameplay, save/reload, upgrades, clean-machine setup, and network isolation have been verified.
+First use requires a dedicated BlueStacks Pie64 instance. The launcher warns before replacing an installed original-signed app and keeps saves, prepared files, and the local signing identity in `%LOCALAPPDATA%\VillageLifeRevivalNext`. Guest network isolation has not been certified.
 
 Build the private test installer from PowerShell with Python dependencies, .NET 10, Inno Setup 6, and the downloaded JDK:
 

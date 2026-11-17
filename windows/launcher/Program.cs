@@ -9,7 +9,7 @@ namespace VillageLife;
 internal static class Program { [STAThread] static void Main() { ApplicationConfiguration.Initialize(); Application.Run(new VillageLifeWindow()); } }
 
 public sealed partial class VillageLifeWindow : Form {
-    const string ReleaseVersion = "0.3.2";
+    const string ReleaseVersion = "0.3.6";
     const string ReleaseTitle = "Village Life Community Update " + ReleaseVersion;
     sealed class Settings { public string GameTables { get; set; }=""; public string Xapk { get; set; }=""; public string Inventory { get; set; }=""; public string? Obb { get; set; } public int Port { get; set; }=80; public bool ClientPrepared { get; set; } public bool PreparedFilesReady { get; set; } public bool VillageChoiceMade { get; set; } public string ImportedVillage { get; set; }=""; public string LocalVillage { get; set; }=""; }
     readonly string root=Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName??AppContext.BaseDirectory;

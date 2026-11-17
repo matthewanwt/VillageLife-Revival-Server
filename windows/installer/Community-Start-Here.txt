@@ -1,4 +1,4 @@
-VILLAGE LIFE COMMUNITY UPDATE 0.3.2
+VILLAGE LIFE COMMUNITY UPDATE 0.3.6
 
 Close your previous launcher before starting this build.
 If you already use the SQLite reliability test, open the new launcher
@@ -19,8 +19,8 @@ To continue a 0.2.6 village, close the old game and launcher, then click
 Import 0.2.6 Save and choose the old installation or its private_state
 backup. Select a village from the preview. Play the imported copy in a
 separate BlueStacks instance. Keep the original installation and instance.
-Use Choose Village to switch between your current and imported villages
-after stopping the launcher server.
+Click Stop, then Choose Village to select a local or imported village.
+Choose the saved village by name and level if you changed BlueStacks instances.
 New villages receive 1,000 gems when they first enter Woodland.
 Use Add Gems in the launcher to add gems to the selected local village.
 

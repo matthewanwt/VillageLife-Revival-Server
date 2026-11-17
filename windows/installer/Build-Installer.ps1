@@ -75,4 +75,4 @@ if ((Get-FileHash -LiteralPath $bundled -Algorithm SHA256).Hash -ne $expectedHas
 New-Item -ItemType Directory -Path $output | Out-Null
 & $IsccPath /Qp "/DStageDir=$stage" "/DOutputDir=$output" (Join-Path $PSScriptRoot 'VillageLifeCommunity.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
-Get-Item -LiteralPath (Join-Path $output 'VillageLife-Community-0.3.2-Setup.exe')
+Get-Item -LiteralPath (Join-Path $output 'VillageLife-Community-0.3.6-Setup.exe')
