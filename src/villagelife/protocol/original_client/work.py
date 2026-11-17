@@ -44,12 +44,30 @@ class OriginalWorkRules:
         skill = int(task.get('skillId', 0))
         if not skill:
             return int(duration)
-        ranks = sum(skill_type(row) == skill for row in actor.get('skills', []))
+        skills = actor.get('skills', [])
+        gathering = str(task.get('taskType')) == '3'
+        # Script_3253_GetVillagerTaskDuration reads the first 18 native slots.
+        # Keep other task families on their existing arithmetic and slot rules.
+        if gathering:
+            skills = skills[:18]
+        ranks = sum(skill_type(row) == skill for row in skills)
         if not ranks:
             return int(duration)
         # Original Script 3253 subtracts the authored multiplier per matching
         # rank, caps the reduction at 75%, then truncates the adjusted seconds.
         reduction = self._n(self.defs.item('villager_skill', skill)['professionMultiplier'])
+        if gathering:
+            if duration >= 2**31 or reduction > 1:
+                raise ValueError('Gathering duration or multiplier outside native range')
+            def f32(value):
+                return struct.unpack('<f', struct.pack('<f', float(value)))[0]
+            factor = f32(1)
+            for _ in range(ranks):
+                factor = f32(factor - f32(reduction))
+            adjusted = f32(f32(duration) * max(f32(0.25), factor))
+            if adjusted >= 2**31:
+                raise ValueError('Gathering duration outside native integer range')
+            return int(adjusted)
         return int(duration * max(Decimal('0.25'), 1 - ranks * reduction))
 
     def start(self,state:dict,service:str,data:dict,at:int)->dict:
