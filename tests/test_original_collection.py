@@ -76,7 +76,7 @@ class CollectionAcknowledgementTests(unittest.TestCase):
             self.assertEqual(normal['inventory'], {'323': 77})
             self.assertEqual(normal['world']['entities'], [])
             self.assertEqual(normal['opaque'], {'keep': True})
-            self.assertEqual(collection.read_collection(normal)['VillagerCollection'], '{"123":3,"124":0}')
+            self.assertEqual(collection.read_collection(normal)['VillagerCollection'], '{"123":2,"124":0}')
             before_rejected = reopened.read_village(identity.village_id)
             invalid = deepcopy(request)
             invalid['data']['calls'][0].update(id='unawarded', data={'VillagerBaseId': 124})

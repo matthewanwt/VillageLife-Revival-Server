@@ -5,6 +5,7 @@ server-persisted entities. This reconstructs only the documented bridge from
 FTUE checkpoint 217 into scenario 2 (area 1).
 """
 from __future__ import annotations
+from .collection_projection import project_entities
 import copy
 import json
 import time
@@ -288,6 +289,7 @@ class OriginalWorldRules:
         self.project_relations(world, output['entities'])
         self.project_life_stages(output['entities'], at)
         self.project_skills(output['entities'])
+        output['entities'] = project_entities(output['entities'], self.defs, world)
         return {'world':output,'user':{**world['user'],'loginAt':at},
                 'OfflineConsumptionMessageModel':[]}
 
@@ -310,6 +312,7 @@ class OriginalWorldRules:
         self.project_relations(world, entities)
         self.project_life_stages(entities, at)
         self.project_skills(entities)
+        entities = project_entities(entities, self.defs, world)
         editable={'fun_building','container_type','workshop','fire_type','decor_item',
                   'material_source','shelter','farm_building','farming_plot','building_task','HuntingLodgeType','fishing_hut','fishing_boat','HuntingSledType'}
         for entity in entities:
