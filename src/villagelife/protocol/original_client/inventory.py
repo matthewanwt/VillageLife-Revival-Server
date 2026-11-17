@@ -22,6 +22,9 @@ class InsufficientGems(ValueError):
 
 
 def spend_gems(state, cost):
+    if (isinstance(cost, bool) or not isinstance(cost, (int, Decimal))
+            or not Decimal(cost).is_finite() or cost < 0):
+        raise ValueError("Invalid gem cost")
     if not cost:
         return
     try:
