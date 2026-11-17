@@ -95,6 +95,22 @@ class ShelterRemovalTests(unittest.TestCase):
                 state['workAreas']={'unrelated':{'status':'working','sourceId':'other','sourceSnapshot':None}}
                 return {}
             repo.mutate(ident.village_id,operation_key='permit',request={},change=permit)
+            def add_second_resident(payload):
+                state = payload['originalSave']['normal']
+                home, person = state['world']['entities']
+                home['beds'].append({'id':'bed-2','shelterSlotID':13,'villagerId':'second'})
+                state['world']['entities'].append({**person,'id':'second','shelterBedId':'bed-2'})
+                return {}
+            repo.mutate(ident.village_id,operation_key='second-resident',request={},change=add_second_resident)
+            before = repo.read_village(ident.village_id)
+            self.assertEqual([c['code'] for c in game.process(request('partial'))['data']['calls']],[400,400])
+            self.assertEqual(repo.read_village(ident.village_id),before)
+            def remove_second_resident(payload):
+                state = payload['originalSave']['normal']
+                state['world']['entities'][0]['beds'].pop()
+                state['world']['entities'].pop()
+                return {}
+            repo.mutate(ident.village_id,operation_key='remove-second',request={},change=remove_second_resident)
             self.assertEqual([c['code'] for c in game.process(request('valid'))['data']['calls']],[200,200])
             saved=repo.read_village(ident.village_id)
             state=saved.payload['originalSave']['normal']

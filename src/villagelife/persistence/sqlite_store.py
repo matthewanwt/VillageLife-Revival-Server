@@ -189,41 +189,50 @@ class SqliteSaveRepository:
                change: Callable[[dict[str, Any]], dict[str, Any]],
                expected_revision: int | None = None
                ) -> tuple[VillageSnapshot, dict[str, Any], bool]:
+        with self.transaction() as db:
+            return self._mutate(db, village_id, operation_key, request, change, expected_revision)
+
+    def mutate_group(self, village_id, operations):
+        """Commit related operations and their individual replay receipts together."""
+        with self.transaction() as db:
+            return [self._mutate(db, village_id, key, request, change)
+                    for key, request, change in operations]
+
+    def _mutate(self, db, village_id, operation_key, request, change, expected_revision=None):
         if not operation_key or len(operation_key) > 200:
             raise InvalidAction('A bounded operation idempotency key is required')
         from villagelife.core.validation import validate_json_tree
         validate_json_tree(request)
         digest = fingerprint(request)
-        with self.transaction() as db:
-            row = db.execute('SELECT * FROM villages WHERE village_id=?', (village_id,)).fetchone()
-            if row is None:
-                raise NotFound(f'Unknown village: {village_id}')
-            recorded = db.execute(
-                'SELECT * FROM receipts WHERE village_id=? AND operation_key=?',
-                (village_id, operation_key),
-            ).fetchone()
-            if recorded is not None:
-                if recorded['request_digest'] != digest:
-                    raise DuplicateActionConflict('Operation key reused with different inputs')
-                return self._snapshot(row), json.loads(recorded['response_json']), True
-            if expected_revision is not None and row['revision'] != expected_revision:
-                raise RevisionConflict(f'Expected revision {expected_revision}, got {row["revision"]}')
-            updated = json.loads(row['payload_json'])
-            response = change(updated)
-            if not isinstance(response, dict):
-                raise TypeError('Game operation must return a response object')
-            validate_json_tree(updated)
-            updated_json = dumps(updated)  # Validates JSON and finite numbers before commit.
-            next_revision = row['revision'] + 1
-            db.execute(
-                'UPDATE villages SET payload_json=?, revision=?, updated_at=? WHERE village_id=?',
-                (updated_json, next_revision, int(time.time()), village_id),
-            )
-            db.execute('INSERT INTO receipts VALUES (?,?,?,?,?)',
-                       (village_id, operation_key, digest, dumps(response), next_revision))
-            snapshot = VillageSnapshot(village_id=village_id, account_id=row['owner_id'], format=row['format'],
-                                       schema_version=row['schema_version'], revision=next_revision, payload=updated)
-            return snapshot, response, False
+        row = db.execute('SELECT * FROM villages WHERE village_id=?', (village_id,)).fetchone()
+        if row is None:
+            raise NotFound(f'Unknown village: {village_id}')
+        recorded = db.execute(
+            'SELECT * FROM receipts WHERE village_id=? AND operation_key=?',
+            (village_id, operation_key),
+        ).fetchone()
+        if recorded is not None:
+            if recorded['request_digest'] != digest:
+                raise DuplicateActionConflict('Operation key reused with different inputs')
+            return self._snapshot(row), json.loads(recorded['response_json']), True
+        if expected_revision is not None and row['revision'] != expected_revision:
+            raise RevisionConflict(f'Expected revision {expected_revision}, got {row["revision"]}')
+        updated = json.loads(row['payload_json'])
+        response = change(updated)
+        if not isinstance(response, dict):
+            raise TypeError('Game operation must return a response object')
+        validate_json_tree(updated)
+        updated_json = dumps(updated)  # Validates JSON and finite numbers before commit.
+        next_revision = row['revision'] + 1
+        db.execute(
+            'UPDATE villages SET payload_json=?, revision=?, updated_at=? WHERE village_id=?',
+            (updated_json, next_revision, int(time.time()), village_id),
+        )
+        db.execute('INSERT INTO receipts VALUES (?,?,?,?,?)',
+                   (village_id, operation_key, digest, dumps(response), next_revision))
+        snapshot = VillageSnapshot(village_id=village_id, account_id=row['owner_id'], format=row['format'],
+                                   schema_version=row['schema_version'], revision=next_revision, payload=updated)
+        return snapshot, response, False
 
     def checkpoint(self) -> None:
         """Checkpoint active WAL before producing a file-level backup."""

@@ -94,6 +94,8 @@ SKILL_SERVICES={'ClientVillagerService/BuyVillagerSkill','ClientVillagerService/
 
 from .shelter_removal import SERVICE as REMOVE_SHELTER, validate_shelter_removal
 
+EMPTY_BED = 'ClientUserShelterService/EmptyBed'
+
 class OriginalClientGame:
     def __init__(self, repository:SqliteSaveRepository, definitions:OriginalDefinitions, *, selected_village=None):
         self.repo=repository
@@ -193,27 +195,42 @@ class OriginalClientGame:
                      'message':'Original-client session mismatch'} for c in calls]}}
         self.community.active_identity = ident
         initial = self.repo.read_village(ident.village_id)
-        # Native deletion can batch EmptyBed before DeleteUserShelter. Reject a
-        # protected/invalid removal before any call in that batch can commit.
-        # Separately submitted earlier EmptyBed requests cannot be rolled back.
+        # Pair bed changes with their deletion, leaving unrelated RPCs independent.
+        removal_groups = {}
+        deferred = set()
         try:
             world = (initial.payload.get('originalSave') or {}).get('normal')
-            for removal in calls:
+            for index, removal in enumerate(calls):
                 if removal.get('service') != REMOVE_SHELTER:
                     continue
                 if not isinstance(world, dict) or not isinstance(removal.get('data'), dict):
                     raise ValueError('Normal village and shelter data required')
                 _, inward = mappings(world, ident.player_id)
-                validate_shelter_removal(world, translate(removal['data'], inward),
-                                         self.defs, require_empty=False)
+                home = validate_shelter_removal(world, translate(removal['data'], inward),
+                                                self.defs, require_empty=False)
+                if home is None:
+                    continue
+                beds = {bed['id'] for bed in home.get('beds', [])}
+                group = [i for i, call in enumerate(calls[:index]) if i not in deferred
+                         and call.get('service') == EMPTY_BED and isinstance(call.get('data'), dict)
+                         and any(call['data'].get('shelterBedId') == bed for bed in beds)]
+                if group:
+                    removal_groups[index] = [*group, index]
+                    deferred.update(group)
         except (ValueError, KeyError, TypeError) as exc:
             return {'code':200, 'currentTime':int(time.time()), 'messages':[],
                     'data':{'calls':[{'id':str(c.get('id','')), 'code':400,
                                      'data':{}, 'message':str(exc)[:200]} for c in calls]}}
         initial = self._resolve_blocked_birthdays(initial)
-        results=[]
+        results={}
         check_birth_cost = False
-        for call in calls:
+        for index, call in enumerate(calls):
+            if index in deferred:
+                continue
+            if index in removal_groups:
+                group = removal_groups[index]
+                results.update(zip(group, self._shelter_removal_group(ident, [calls[i] for i in group])))
+                continue
             if not isinstance(call,dict):raise ValueError('Invalid original call')
             service=call.get('service','')
             data=call.get('data',{})
@@ -228,7 +245,7 @@ class OriginalClientGame:
                 code=501;message='Original gameplay rule not implemented: '+service
             else:
                 try:
-                    snapshot=initial if not results else self.repo.read_village(ident.village_id)
+                    snapshot=initial if index == 0 else self.repo.read_village(ident.village_id)
                     world=(snapshot.payload.get('originalSave') or {}).get('normal')
                     outward,inward=mappings(world,ident.player_id) if isinstance(world,dict) else ({},{})
                     canonical=translate(data,inward)
@@ -255,8 +272,8 @@ class OriginalClientGame:
             if isinstance(service,str):
                 try:record_original_call(self.repo,service,code,response,data,message)
                 except Exception:pass
-            results.append({'id':str(call.get('id','')),'code':code,
-                            'data':response,'message':message})
+            results[index] = {'id':str(call.get('id','')),'code':code,
+                              'data':response,'message':message}
         now = int(time.time())
         latest = self.repo.read_village(ident.village_id) if calls else initial
         state = (latest.payload.get('originalSave') or {}).get('normal')
@@ -271,7 +288,29 @@ class OriginalClientGame:
                 outward, _ = mappings(state, ident.player_id)
                 messages = translate(notices, outward)
         return {'code':200,'currentTime':now,'messages':messages,
-                'data':{'calls':results}}
+                'data':{'calls':[results[i] for i in range(len(calls))]}}
+
+    def _shelter_removal_group(self, ident, calls):
+        snapshot = self.repo.read_village(ident.village_id)
+        save = snapshot.payload.get('originalSave')
+        _, inward = mappings(save['normal'], ident.player_id)
+        operations = []
+        code, message = 200, ''
+        try:
+            for call in calls:
+                self._execute(ident, call, call['service'], translate(call['data'], inward), save,
+                              legacy_import=snapshot.format == 'legacy.profile+tutorial.v1',
+                              pending=operations)
+            outcomes = self.repo.mutate_group(ident.village_id, operations)
+            responses = [response for _, response, _ in outcomes]
+        except (ValueError, KeyError, TypeError, DuplicateActionConflict) as exc:
+            code = 409 if isinstance(exc, DuplicateActionConflict) else 400
+            message = str(exc)[:200]
+            responses = [{} for _ in calls]
+        for call, response in zip(calls, responses, strict=True):
+            try:record_original_call(self.repo, call['service'], code, response, call['data'], message)
+            except Exception:pass
+            yield {'id':str(call.get('id','')),'code':code,'data':response,'message':message}
 
     def _resolve_blocked_birthdays(self, snapshot):
         at = int(time.time())
@@ -313,7 +352,7 @@ class OriginalClientGame:
                             cost, balance, cost - balance)
                 return
 
-    def _execute(self, ident, call, service:str, data:dict, save, *, legacy_import=False)->dict:
+    def _execute(self, ident, call, service:str, data:dict, save, *, legacy_import=False, pending=None)->dict:
         if not isinstance(save,dict):raise ValueError('Original tutorial not initialised; log in again')
         if service in NORMAL_READ and service!='ClientStartupService/GetAreaContent':
             return self._normal_read(save,service,data,ident)
@@ -533,8 +572,11 @@ class OriginalClientGame:
                     if normal:
                         self.materials.restore_starter_tools(normal)
             return result
-        _, result, _=self.repo.mutate(ident.village_id,operation_key=operation_key,
-               request={'service':service,'data':data},change=apply)
+        request = {'service': service, 'data': data}
+        if pending is not None:
+            pending.append((operation_key, request, apply))
+            return {}
+        _, result, _=self.repo.mutate(ident.village_id,operation_key=operation_key,request=request,change=apply)
         return result
 
     def _normal_read(self, save:dict, service:str, data:dict, ident=None)->dict:

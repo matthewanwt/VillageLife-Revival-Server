@@ -16,10 +16,10 @@ another area's house, occupied beds or remaining villager bed claims, and active
 task references reject removal. An unrelated null task snapshot is valid;
 unknown task layouts reject without mutation.
 
-A narrow preflight validates removal eligibility before any call in the same
-batch executes. This prevents a protected/invalid deletion from partially
-emptying beds in that batch. It cannot roll back an `EmptyBed` request committed
-in a separate, earlier HTTP request and does not change generic batch semantics.
+The server groups preceding bed changes for the same shelter with its deletion.
+The group and its replay receipts commit in one transaction. A failed deletion
+rolls back the matching bed changes, including when another bed is still occupied.
+An `EmptyBed` already committed in a separate request remains saved.
 
 Validation:
 
