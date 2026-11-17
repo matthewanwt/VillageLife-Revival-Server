@@ -1,5 +1,6 @@
 """Original conception, birth and pregnancy timer requests."""
 from __future__ import annotations
+from .collection_projection import ordinary_seed
 
 import copy
 import uuid
@@ -212,7 +213,7 @@ class OriginalFamilyRules:
         for ident in record['bornChildren']:
             child = actor(state, ident)
             villagers.append({'ID': native[ident], 'Name': child['name'], 'Equipment': child['equipment'],
-                              'villagerBaseId': child['villagerBaseId'], 'StartAge': 0,
+                              'villagerBaseId': 0 if ordinary_seed(child, self.defs) else child['villagerBaseId'], 'StartAge': 0,
                               'BornAt': child['bornAt'], 'createdAt': child['bornAt'],
                               'Gender': child['gender'], 'Rarity': child['rarity'],
                               'Skills': [{'SkillTypeID': s['skilltypeId'], 'SkillSourceType': s['skillOriginType']}

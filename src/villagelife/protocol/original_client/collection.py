@@ -29,5 +29,10 @@ def read_collection(state: dict) -> dict:
         villagers = [int(key) for key in collection]
     except (TypeError, ValueError) as exc:
         raise ValueError('Saved villager collection contains an invalid identifier') from exc
-    return {'VillagerCollection': json.dumps(collection, separators=(',', ':')),
+    if any(type(value) is not int or value not in (0, 1, 2, 3) for value in collection.values()):
+        raise ValueError('Saved villager collection contains an invalid status')
+    # Native reload expects pending 1 and acknowledged >1; keep saved 2/3 unchanged.
+    wire = {key: 1 if value in (1, 2) else 2 if value == 3 else 0
+            for key, value in collection.items()}
+    return {'VillagerCollection': json.dumps(wire, separators=(',', ':')),
             'villagers': villagers}
