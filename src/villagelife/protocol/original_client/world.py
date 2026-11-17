@@ -112,12 +112,14 @@ class OriginalWorldRules:
         existing = {str(entity.get('id')) for entity in entities if isinstance(entity, dict)}
         changed = False
         deleted_foundations = set(state.get('deletedFoundations', []))
+        deleted_shelters = set(state.get('deletedShelters', []))
         deleted_foundations.update(job.get('sourceId')
                                    for job in state.get('workAreas', {}).values()
                                    if job.get('family') == '2' and job.get('status') == 'harvested')
         for entity in self.authored(area_id):
             ident = str(entity.get('id', ''))
             if (not ident or ident in existing or ident in deleted_foundations
+                    or (entity.get('templateType') == 'shelter' and ident in deleted_shelters)
                     or entity.get('templateType') == 'villager_type'
                     or self._area(entity) != area_id):
                 continue
