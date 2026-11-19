@@ -47,6 +47,24 @@ This is for isolated developer analysis only. The original client is patched for
 
 The private XAPK can live under `private-assets/` (Git-ignored). Run `tools/prepare_original_client.py --help` to inspect local extraction/patch/signing options. It does **not** automatically install the APK or verify network egress restrictions. Keep a stable local signing identity for upgrades.
 
+## BlueStacks detection
+
+The launcher and server locate BlueStacks 5 automatically in this order:
+
+1. **`VILLAGELIFE_BLUESTACKS_HOME`** – checked first if set (highest priority).
+2. **Windows registry** – `HKEY_LOCAL_MACHINE\SOFTWARE\BlueStacks_nxt` → `InstallDir` value (also tries `BlueStacks_nxt_cn` and `BlueStacks_msi5` for alternate editions).
+3. **`%ProgramFiles%\BlueStacks_nxt`**, **`%ProgramW6432%\BlueStacks_nxt`**, **`%ProgramFiles(x86)%\BlueStacks_nxt`** – standard install locations from environment variables.
+4. **`C:\Program Files\BlueStacks_nxt`** – hard-coded last-resort fallback.
+
+A path is accepted only when it contains both `HD-Player.exe` and `HD-Adb.exe`.
+
+If detection fails, the error message lists every path that was searched.
+To point the launcher at a custom installation:
+
+```powershell
+$env:VILLAGELIFE_BLUESTACKS_HOME = 'D:\BlueStacks5'
+```
+
 ## Save migration
 
 ```powershell

@@ -76,18 +76,64 @@ def select_by_id(rows: list[Instance], ident: str, *, check_live_port: bool = Tr
     return row
 
 
+def _registry_install_dir() -> Path | None:
+    """Read BlueStacks 5 install dir from the Windows registry.
+
+    BlueStacks 5 (nxt) writes InstallDir under one of several key names
+    depending on edition and locale.  We try all known variants so a custom
+    or region-specific install is still found.
+
+    Keys checked (HKEY_LOCAL_MACHINE\\SOFTWARE\\<name>):
+      • BlueStacks_nxt       – standard installer (most common)
+      • BlueStacks_nxt_cn    – China-region edition
+      • BlueStacks_msi5      – MSI / enterprise distributor variant
+
+    Confidence: SUSPECTED for BlueStacks_msi5 (seen in secondary sources only;
+    BlueStacks_nxt and BlueStacks_nxt_cn are CONFIRMED in community reports).
+    Returns None on any error (non-Windows, key absent, permission denied).
+    """
+    try:
+        import winreg
+    except ImportError:
+        return None  # not Windows
+    _REG_KEYS = (
+        r'SOFTWARE\BlueStacks_nxt',
+        r'SOFTWARE\BlueStacks_nxt_cn',
+        r'SOFTWARE\BlueStacks_msi5',
+    )
+    for key_name in _REG_KEYS:
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_name) as key:
+                value, _ = winreg.QueryValueEx(key, 'InstallDir')
+                if value:
+                    return Path(value)
+        except OSError:
+            continue
+    return None
+
+
 def installation(*, search: list[Path] | None = None) -> Path:
     if search is None:
         search = []
         if os.environ.get('VILLAGELIFE_BLUESTACKS_HOME'):
             search.append(Path(os.environ['VILLAGELIFE_BLUESTACKS_HOME']))
-        for var in ('ProgramFiles','ProgramW6432','ProgramFiles(x86)'):
-            if os.environ.get(var): search.append(Path(os.environ[var])/'BlueStacks_nxt')
+        reg_dir = _registry_install_dir()
+        if reg_dir is not None:
+            search.append(reg_dir)
+        for var in ('ProgramFiles', 'ProgramW6432', 'ProgramFiles(x86)'):
+            if os.environ.get(var):
+                search.append(Path(os.environ[var]) / 'BlueStacks_nxt')
         search.append(Path('C:/Program Files/BlueStacks_nxt'))
     for root in search:
-        if (root/'HD-Player.exe').is_file() and (root/'HD-Adb.exe').is_file():
+        if (root / 'HD-Player.exe').is_file() and (root / 'HD-Adb.exe').is_file():
             return root.resolve()
-    raise InstanceError('VL-BS-NOT-FOUND', 'BlueStacks 5 not found. Repair or install BlueStacks 5.')
+    searched = '; '.join(str(p) for p in search) if search else '(none)'
+    raise InstanceError(
+        'VL-BS-NOT-FOUND',
+        f'BlueStacks 5 not found. Repair or install BlueStacks 5.'
+        f' Searched: {searched}.'
+        f' Set VILLAGELIFE_BLUESTACKS_HOME to override.'
+    )
 
 
 def _atomic_settings(path: Path, value: dict) -> None:
