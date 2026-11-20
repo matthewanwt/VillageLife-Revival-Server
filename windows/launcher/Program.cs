@@ -20,7 +20,7 @@ internal static class Program {
 }
 
 public sealed partial class VillageLifeWindow : Form {
-    const string ReleaseVersion = "0.3.6";
+    const string ReleaseVersion = "0.4.1";
 #if PRIVATE_CANDIDATE
     const string ReleaseTitle = "Village Life — Private Audit Candidate";
     const string DataFolder = "VillageLifeAuditPrivate";

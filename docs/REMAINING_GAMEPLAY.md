@@ -1,9 +1,13 @@
 # Current source and remaining restoration work
 
-The published community download remains 0.3.6. Main now includes the accumulated
-save-performance/reliability fixes, the redesigned launcher and merged PR #9 for
-custom-drive BlueStacks detection. A new release has been deferred at the owner's
-request; these changes are source updates, not a new published installer.
+Community release **0.4.1** includes the accumulated save-performance and
+reliability fixes, updated launcher, reviewed BlueStacks detection changes and
+the community ticket repairs below. See [release notes](RELEASE_0_4_1.md).
+
+The [21 November ticket review](TICKET_REVIEW_20261121.md) separates duplicate
+public-build reports, new repairs, existing source fixes and remaining client or
+seasonal gaps. New repairs include starter mastery tools, hero beds, separate
+workshops, skill recovery, regional wishes and remaining history-scan costs.
 
 ## Remaining checks and features
 
@@ -30,9 +34,9 @@ and BlueStacks instance separate until the imported village is checked.
 
 ## Validation
 
-The integrated regression run passes 165 tests, including PR #9's 29 discovery
+The integrated regression run passes 180 tests, including PR #9's 29 discovery
 tests. Prior private desktop checks cover the new launcher pages, setup/chooser
 cancellation, village selection, backups, invalid gem input and error recovery.
 Release gating also checks large-save budgets, source privacy/size and pinned
 build dependencies. These do not substitute for every gameplay interaction or
-clean-PC installer test. Packaging/publication will be revisited separately.
+clean-PC installer test. See the release manifest for the exact packaged source and validation results.

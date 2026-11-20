@@ -113,7 +113,7 @@ $isccArgs = @('/Qp',"/DStageDir=$stage","/DOutputDir=$output")
 if ($PrivateCandidate) { $isccArgs += '/DPrivateCandidate=1' }
 & $IsccPath @isccArgs (Join-Path $PSScriptRoot 'VillageLifeCommunity.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
-$installer = Join-Path $output $(if ($PrivateCandidate) { 'VillageLife-Private-Audit-Setup.exe' } else { 'VillageLife-Community-0.3.6-Setup.exe' })
+$installer = Join-Path $output $(if ($PrivateCandidate) { 'VillageLife-Private-Audit-Setup.exe' } else { 'VillageLife-Community-0.4.1-Setup.exe' })
 Sign-OwnedFile $installer
 $checksum = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
 "$checksum  $([IO.Path]::GetFileName($installer))" | Set-Content -LiteralPath ($installer + '.sha256') -Encoding ASCII

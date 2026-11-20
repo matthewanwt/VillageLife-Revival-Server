@@ -7,6 +7,7 @@ Unknown worker/habitat invariants fail rather than damaging the save.
 from __future__ import annotations
 import copy
 import json
+from villagelife.persistence.history import active_work
 from .catalog import OriginalDefinitions
 from .world import OriginalWorldRules
 from .habitats import OriginalHabitatRules
@@ -108,7 +109,7 @@ class AreaRules:
         if not moving:
             return reply
         if any(job.get('villagerId') in moving and job.get('status') != 'harvested'
-               for job in state.get('workAreas', {}).values()):
+               for job in active_work(state)):
             raise ValueError('Collect existing villager work before transfer')
         entities = state['world']['entities']
         if any(entity.get('lightingVillagerId') in moving and now < entity.get('lightingCompleteAt', 0)

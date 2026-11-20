@@ -22,10 +22,13 @@ class OriginalQuestRules:
 
     @staticmethod
     def completed_travel_stories(state: dict) -> dict:
-        return {str(record['quest']['objectId']): record
-                for record in state.get('completedQuests', {}).values()
+        records = state.get('completedQuests', {})
+        if 'completedTravelStories' not in state:
+            state['completedTravelStories'] = {
+                str(record['quest']['objectId']): key for key, record in records.items()
                 if record.get('quest', {}).get('questTypeId') == 12
                 and str(record['quest'].get('objectId')) in OriginalQuestRules.ONE_TIME_TRAVEL_STORIES}
+        return {story: records[key] for story, key in state['completedTravelStories'].items() if key in records}
 
     def travel_objective_reached(self, state: dict, story: str) -> bool:
         return story in self.TRAVEL_OBJECTIVES and int(state.get('user', {}).get('maxAreaId', 1)) >= self.TRAVEL_OBJECTIVES[story]
@@ -117,5 +120,8 @@ class OriginalQuestRules:
         state['quests']=[row for row in state['quests'] if row.get('id')!=ident]
         completed[ident]={'quest':copy.deepcopy(quest),'completedAt':at,
                           'response':copy.deepcopy(response)}
+        if story_id in self.ONE_TIME_TRAVEL_STORIES:
+            self.completed_travel_stories(state)
+            state['completedTravelStories'][story_id] = ident
         state['revision']=int(state.get('revision',0))+1
         return response

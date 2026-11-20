@@ -97,6 +97,7 @@ class CollectionAcknowledgementTests(unittest.TestCase):
                 'Collection_Set_Item': [{'CollectionSet': '9', 'GachaVillagerArray': '123'}],
                 'Collection_Set': [{'id': '9', 'IsLimitedEdition': '1'}],
                 'global': [{'label': '4StarLimitedEdVillagerGemCost', 'value': '125'},
+                           {'label': 'skill_slots_max', 'value': '3'},
                            {'label': 'hours_per_year', 'value': '24'}],
                 'villager_type': [{'id': '1', 'name': 'Adult', 'minAge': '18',
                                    'maxAge': '55', 'maxEnergy': '40'}],

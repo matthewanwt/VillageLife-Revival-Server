@@ -12,7 +12,7 @@
   #define AppIdentity "VillageLifeCommunityTest"
   #define AppLabel "Village Life Community Test"
   #define AppFolder "VillageLifeCommunityTest"
-  #define InstallerName "VillageLife-Community-0.3.6-Setup"
+  #define InstallerName "VillageLife-Community-0.4.1-Setup"
 #endif
 #ifndef OutputDir
   #error Supply /DOutputDir= when compiling
@@ -22,7 +22,7 @@
 SetupIconFile=..\launcher\VillageLife.ico
 AppId={#AppIdentity}
 AppName={#AppLabel}
-AppVersion=0.3.6
+AppVersion=0.4.1
 AppPublisher=Village Life Community Project
 DefaultDirName={localappdata}\Programs\{#AppFolder}
 DefaultGroupName={#AppLabel}
@@ -30,7 +30,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir={#OutputDir}
 OutputBaseFilename={#InstallerName}
-VersionInfoVersion=0.3.6
+VersionInfoVersion=0.4.1
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

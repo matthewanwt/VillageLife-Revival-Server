@@ -65,6 +65,18 @@ class OriginalInventoryRules:
         for key, amount in tools.items():
             if inventory.get(key, 0) < amount:
                 inventory[key] = amount
+        # The later areas require the mastery marker, not the ordinary tool.
+        # Only restore markers whose base tool is already a free, uncraftable
+        # starter. Craftable tools must still earn their mastery normally.
+        for key in self.starter_masteries:
+            if inventory.get(key, 0) < 1:
+                inventory[key] = 1
+
+    @cached_property
+    def starter_masteries(self) -> frozenset[str]:
+        return frozenset(str(row['materialRequirement'])
+                         for row in self.defs.rows('material_mastery')
+                         if str(row.get('materialType')) in self.starter_tools)
 
     def _building_ancestors(self) -> dict[tuple[str, int], frozenset[str]]:
         if self._ancestors is not None:

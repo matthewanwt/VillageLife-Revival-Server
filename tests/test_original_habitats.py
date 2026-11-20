@@ -64,7 +64,7 @@ class OriginalHabitatTests(unittest.TestCase):
         occupied_actor = {'id': 'villager-1', 'templateType': 'villager_type',
                           'shelterBedId': '', 'position': {'areaId': 1}}
         scenery = {'id': 'scene-house', 'templateType': 'shelter',
-                   'templateId': 34, 'serverPersisted': True,
+                   'templateId': 42, 'serverPersisted': True,
                    'position': {'areaId': 1},
                    'beds': [local_bed('scene-house', 0),
                             local_bed('scene-house', 1)]}
@@ -122,7 +122,7 @@ class OriginalHabitatTests(unittest.TestCase):
         actor = {'id': 'villager-1', 'templateType': 'villager_type',
                  'shelterBedId': 'occupied-bed', 'position': {'areaId': 1}}
         scenery = {'id': 'scene-house', 'templateType': 'shelter',
-                   'templateId': 34, 'serverPersisted': True,
+                   'templateId': 42, 'serverPersisted': True,
                    'position': {'areaId': 1},
                    'beds': [local_bed('scene-house', 0, 'villager-1'),
                             local_bed('scene-house', 1)]}

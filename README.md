@@ -4,21 +4,20 @@ This repository contains a **new server implementation** with an original Androi
 
 ## Play on Windows
 
-The latest published download is **0.3.6**. Main also contains unreleased
-save-performance, reliability and launcher-interface improvements, plus the
-reviewed BlueStacks detection fix from PR #9. No new installer/release has been
-published for these source changes yet.
+The current community release is **0.4.1**, including save-performance and
+reliability improvements, the updated launcher, improved BlueStacks detection,
+and community ticket fixes. See [the release notes](docs/RELEASE_0_4_1.md).
 
-Source builds enable the new history format after creating a full recovery copy.
-Keep that pre-migration backup if returning to an older launcher; older versions
-cannot read the migrated database. See [the remediation report](docs/AUDIT_REMEDIATION_20261119.md)
-for validation details and remaining manual checks.
+Existing local villages adapt on Play after a full recovery backup. The new
+history format requires the newer server: keep the pre-migration backup if
+returning to an older version. Migration preserves history and does not
+automatically shrink the database file on disk.
 
 **[Download the latest Windows release](https://github.com/matthewanwt/VillageLife-Revival-Server/releases/latest)** · **[Browse all versions](https://github.com/matthewanwt/VillageLife-Revival-Server/releases)**
 
 Open a release and look under **Assets** for the Windows setup EXE. It includes the game archive and expansion, launcher, and local server. Install BlueStacks with a Pie 64-bit instance, then open the launcher and click **Play** for guided setup.
 
-Close the game and launcher before updating. Keep a copy of your save. In the updated source launcher, use **My Villages** to select an existing local village, including after changing BlueStacks instances. For a 0.2.6 backup, use **Import 0.2.6 Save** (under My Villages in the updated source launcher) and choose the extracted `private_state` folder.
+Close the game and launcher before updating. Keep a copy of your save. In the launcher, use **My Villages** to select an existing local village, including after changing BlueStacks instances. For a 0.2.6 backup, use **Import 0.2.6 Save** (under My Villages in the launcher) and choose the extracted `private_state` folder.
 
 Gameplay coverage and known gaps are documented in `docs/ORIGINAL_OPERATION_COVERAGE.md` and `docs/REMAINING_GAMEPLAY.md`.
 

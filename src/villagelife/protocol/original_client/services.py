@@ -14,6 +14,7 @@ from typing import Any
 from villagelife.persistence.sqlite_store import SqliteSaveRepository
 from villagelife.protocol.original_client.sessions import OriginalClientSessions
 from villagelife.protocol.original_client.catalog import OriginalDefinitions
+from .birth_skills import restore_birth_shields, restore_starter_shields
 from villagelife.protocol.original_client.tutorial import TutorialRules
 from villagelife.protocol.original_client.world import OriginalWorldRules
 from villagelife.protocol.original_client.areas import AreaRules
@@ -43,6 +44,23 @@ from villagelife.support import record_missing, record_original_call, batch_diag
 from villagelife.core.errors import DuplicateActionConflict
 from villagelife.protocol.original_client.native_ids import mappings, translate
 from .indexes import entity_scope
+
+# Fixed, value-free labels distinguish server action latency from client-side
+# animation/rendering stalls. Never use user-supplied service text as a label.
+RPC_TIMING_PHASES = {
+    'ClientTaskService/HarvestTask': 'rpc_harvest',
+    'ClientTaskService/StartGatheringTask': 'rpc_start_gathering',
+    'ClientTaskService/StartCraftingTask': 'rpc_start_crafting',
+    'ClientTaskService/StartBuildingTask': 'rpc_start_building',
+    'ClientTaskService/StartFarmingTask': 'rpc_start_farming',
+    'ClientTaskService/StartFishingTask': 'rpc_start_fishing',
+    'ClientTaskService/StartHuntingTask': 'rpc_start_hunting',
+    'ClientVillager/Consume': 'rpc_consume',
+    'ClientVillager/ReleaseXp': 'rpc_collect_happiness',
+    'ClientStartupService/GetAreaContent': 'rpc_area_content',
+    'ClientMaterialService/GetUserMaterialTypes': 'rpc_inventory',
+    'ClientVillagerService/MoveVillagers': 'rpc_move_villagers',
+}
 
 LOG = logging.getLogger(__name__)
 BIRTH_COST_CHECKS = BABY_CHARM_SERVICES | {
@@ -156,8 +174,8 @@ class OriginalClientGame:
                         changed=self.habitats.sync(normal,at) or changed
                 return {'authoredObjectsRestored':changed}
             self.repo.mutate(ident.village_id,
-                operation_key='original:migrate:habitats-v4',
-                request={'action':'restore-authored-world-sync-assignments-and-real-shelter-beds','version':4},
+                operation_key='original:migrate:habitats-v5',
+                request={'action':'restore-authored-world-sync-assignments-and-real-shelter-beds','version':5},
                 change=reconcile)
             if snapshot.format == 'legacy.profile+tutorial.v1':
                 def restore_legacy_beds(payload):
@@ -173,6 +191,18 @@ class OriginalClientGame:
                 operation_key='original:migrate:completed-farm-foundations-v1',
                 request={'action':'reconcile-completed-farm-foundations'},
                 change=reconcile_farm)
+            def restore_skills(payload):
+                normal = payload['originalSave']['normal']
+                changed = self.baby_charms.restore_adult_shields(normal, int(time.time()))
+                changed = restore_starter_shields(self.defs, normal) or changed
+                changed = restore_birth_shields(self.defs, normal,
+                    self.family.setting('skill_slots_max')) or changed
+                if changed:
+                    normal['revision'] = int(normal.get('revision', 0)) + 1
+                return {'skillRanksRestored': changed}
+            self.repo.mutate(ident.village_id,
+                operation_key='original:migrate:recorded-skill-ranks-v1',
+                request={'action':'restore-proven-charm-and-recorded-birth-ranks'}, change=restore_skills)
             def on_login(payload):
                 normal = payload['originalSave']['normal']
                 self.wants.compact_consumption_history(normal)
@@ -249,6 +279,7 @@ class OriginalClientGame:
             if not isinstance(call,dict):raise ValueError('Invalid original call')
             service=call.get('service','')
             data=call.get('data',{})
+            rpc_started = perf_counter()
             code=200;message='';response={}
             if not isinstance(service,str) or len(service)>160 or not isinstance(data,dict):
                 code=400;message='Invalid service or request body'
@@ -284,6 +315,9 @@ class OriginalClientGame:
                     code=409;message=str(exc)
                 except (ValueError,KeyError,TypeError) as exc:
                     code=400;message=str(exc)[:200]
+            phase = RPC_TIMING_PHASES.get(service) if isinstance(service, str) else None
+            if phase is not None:
+                self.repo.observe(phase, (perf_counter() - rpc_started) * 1000)
             if code==501:
                 try:record_missing(self.repo,'RPC',service,501)
                 except Exception:pass

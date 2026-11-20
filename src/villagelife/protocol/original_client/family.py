@@ -65,7 +65,8 @@ class OriginalFamilyRules:
             mother, father = self.couple(state, mother['id'], at)
         except ValueError:
             return False
-        if pregnant(mother) or self.places(state) < 1 or self.world._area(mother) != state['areaId']:
+        if (pregnant(mother) or state.get('pregnancies', {}).get(mother['id'], {}).get('status') == 'pregnant'
+                or self.places(state) < 1 or self.world._area(mother) != state['areaId']):
             return False
         married = max(int(mother.get('marriedAt', 0)), int(father.get('marriedAt', 0)),
                       int(state.get('createdAt', 0)))
@@ -88,7 +89,7 @@ class OriginalFamilyRules:
         before = state.get('wants', [])
         eligible = [p for p in actors(state) if int(p.get('gender', 0)) == 1 and self.eligible(state, p, at)]
         allowed = {p['id'] for p in eligible}
-        kept = [w for w in before if w.get('MaterialID') != 343 or w['VillagerStringID'] in allowed]
+        kept = [w for w in before if str(w.get('MaterialID')) != '343' or w['VillagerStringID'] in allowed]
         changed = kept != before
         state['wants'] = kept
         existing = {w['VillagerStringID'] for w in kept if w.get('wantableCategoryType') == 5}
@@ -149,8 +150,18 @@ class OriginalFamilyRules:
         ident = mother['id']
         records = state.setdefault('pregnancies', {})
         last = records.get(ident, {})
-        if pregnant(mother):
-            return self.reply(mother, last.get('satisfiedWants', []))
+        if pregnant(mother) or last.get('status') == 'pregnant':
+            changed = False
+            if last.get('status') == 'pregnant' and not pregnant(mother):
+                # Imported/older worlds can retain the durable pregnancy plan
+                # while losing its display flag. Never overwrite that child plan.
+                mother.update(pregnant='true', pregnancyStartTime=last.get('attemptedAt',
+                              mother.get('pregnancyStartTime', 0)), updatedAt=at)
+                changed = True
+            satisfied = satisfy_wants(state, {ident, last.get('fatherId')}, 5, at)
+            if changed or satisfied:
+                touch(state, at)
+            return self.reply(mother, satisfied or last.get('satisfiedWants', []))
         mother, father = self.couple(state, ident, at)
         if self.retry_remaining(last, at):
             return self.reply(mother)

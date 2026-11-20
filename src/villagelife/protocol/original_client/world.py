@@ -11,7 +11,7 @@ import json
 import time
 from functools import cached_property, lru_cache
 import xml.etree.ElementTree as ET
-from .birth_skills import skill_type
+from .birth_skills import skill_type, restore_starter_shields
 from .catalog import OriginalDefinitions
 
 class OriginalWorldRules:
@@ -223,6 +223,7 @@ class OriginalWorldRules:
                         'riverside_mountain':{'status':'not-fully-implemented'}}}
         if type(grant) is int and grant > 0:
             state['startingGemsGranted'] = grant
+        restore_starter_shields(self.defs, state)
         return state
 
     def project_relations(self, state: dict, entities: list[dict]) -> None:

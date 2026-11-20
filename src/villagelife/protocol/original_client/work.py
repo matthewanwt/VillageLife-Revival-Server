@@ -183,6 +183,11 @@ class OriginalWorkRules:
             if concurrent>=int(workshop['tableCount']):raise ValueError('Workshop is full')
         reward_set=task['rewardSet']
         rewards=matching(self.defs, 'reward_set_item', 'setId', reward_set) if reward_set!='0' else []
+        # Authored sets can retain disabled alternatives (zero chance or zero
+        # quantity). They cannot be awarded and do not make a deterministic
+        # task random, e.g. the original wounded-deer rescue reward set.
+        rewards = [row for row in rewards if self._n(row['chance']) > 0
+                   and self._n(row['quantity']) > 0]
         if family in {'2','6'}:
             building=self.buildings.completion_definition(
                 {'templateId':int(upgrade_definition['id'])} if upgrade_definition else source)

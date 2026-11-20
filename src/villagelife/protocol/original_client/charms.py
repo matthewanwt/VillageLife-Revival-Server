@@ -4,9 +4,10 @@ from __future__ import annotations
 import copy
 import math
 import uuid
+from collections import Counter
 from decimal import Decimal
 
-from .birth_skills import parent_shields
+from .birth_skills import parent_shields, authored_adult_shields, skill_type
 from .family import pregnant
 from .inventory import spend_gems
 from .native_ids import reserve_ids
@@ -85,11 +86,8 @@ class OriginalBabyCharmRules:
         position = next((entity['position'] for entity in entities
                          if entity.get('templateType') in {'shrine', 'workshop'}
                          and self.family.world._area(entity) == area), {'x': 1600, 'y': 3500, 'areaId': area})
-        valid = {row['id'] for row in self.defs.rows('villager_skill')} - {'0'}
-        skills = []
-        for ident in seed.get('skills', '').split(','):
-            if ident in valid and sum(skill['skilltypeId'] == int(ident) for skill in skills) < 3:
-                skills.append({'skilltypeId': int(ident), 'skillOriginType': 0})
+        skills = authored_adult_shields(self.defs, seed, self.family.setting('skill_slots_max'))
+        profession = next((row['skilltypeId'] for row in skills if row['skillOriginType'] == 0), 0)
         person = {
             'id': 'local-gacha-' + uuid.uuid4().hex, 'refId': '', 'name': seed['name'],
             'templateType': 'villager_type', 'templateId': int(kind['id']), 'serverPersisted': True,
@@ -101,12 +99,57 @@ class OriginalBabyCharmRules:
             'position': {'x': position['x'] + 40, 'y': position['y'], 'areaId': area, 'rotation': 0},
             'equipment': seed['equipment'], 'genetics': '', 'relations': [], 'skills': skills,
             'wants': [], 'clothing': [], 'isCommunityVillager': 'false', 'retireAt': 0, 'retireEventID': 0,
+            'acquisitionKind': 'adultCharm', 'comingOfAgeSkill': profession, 'comingOfAgeCompletedAt': at,
         }
         entities.append(person)
         collection = state.setdefault('villagerCollection', {})
         key = str(base_id)
         collection[key] = max(2, collection.get(key, 0))
         return person
+
+    def restore_adult_shields(self, state, at):
+        """Recover proven charm/hero ranks, preserving choices and purchased ranks."""
+        changed = False
+        limit = self.family.setting('skill_slots_max')
+        for person in state.get('world', {}).get('entities', []):
+            if person.get('templateType') != 'villager_type':
+                continue
+            base = person.get('collectionBaseId', person.get('villagerBaseId'))
+            if type(base) is not int:
+                continue
+            try:
+                seed = self.defs.item('gachaVillager', base)
+            except KeyError:
+                continue
+            local_award = (str(person.get('id', '')).startswith('local-gacha-')
+                           or person.get('acquisitionKind') == 'adultCharm')
+            # A matching six-star hero appearance is unambiguous evidence for
+            # its intrinsic mastery. Ordinary/imported appearance IDs alone are not.
+            rarity = person.get('rarity', 0)
+            hero = seed.get('star') == '6' and type(rarity) is int and rarity >= 5
+            if (not (local_award or hero) or person.get('equipment') != seed.get('equipment')
+                    or self.family.world.current_age(person, at) < 18):
+                continue
+            expected = authored_adult_shields(self.defs, seed, limit)
+            skills = person.setdefault('skills', [])
+            counts = Counter(map(skill_type, skills))
+            desired = Counter(map(skill_type, expected))
+            if (local_award and 'comingOfAgeSkill' not in person
+                    and all(int(row.get('skillOriginType', -1)) == 0 for row in skills)
+                    and all(count <= desired[kind] for kind, count in counts.items())):
+                person['skills'] = skills = [dict(row) for row in expected]
+                counts = Counter(map(skill_type, skills))
+                profession = next((row['skilltypeId'] for row in expected if row['skillOriginType'] == 0), 0)
+                person.update(comingOfAgeSkill=profession, comingOfAgeCompletedAt=at)
+                changed = True
+            for row in expected:
+                kind = row['skilltypeId']
+                if counts[kind] < min(limit, desired[kind]):
+                    # For born/imported heroes do not fabricate parental origins.
+                    skills.append({**row, 'skillOriginType': row['skillOriginType'] if local_award else 0})
+                    counts[kind] += 1
+                    changed = True
+        return changed
 
     def open_villager_charm(self, state, service, data, at, owner, rng):
         item, group = self.pack(data.get('CharmSetID'), hud=True)

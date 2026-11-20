@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import uuid
 import copy
+from villagelife.persistence.history import active_work
 
 from .catalog import OriginalDefinitions
 from .habitats import OriginalHabitatRules
@@ -116,7 +117,7 @@ class OriginalBuildingRules:
             raise ValueError('Unknown editable position in active area')
         entity = matches[0]
         if any(job.get('status') != 'harvested' and job.get('sourceId') == entity['id']
-               for job in state.get('workAreas', {}).values()):
+               for job in active_work(state)):
             raise ValueError('Object has unfinished work')
         entity.update(position=position, positionId=ident)
         state['revision'] = int(state.get('revision', 0)) + 1
@@ -160,7 +161,7 @@ class OriginalBuildingRules:
                     and all(axis in left and axis in right
                             and abs(left[axis] - right[axis]) <= 1 for axis in ('x', 'y')))
 
-        active = {job.get('sourceId') for job in state.get('workAreas', {}).values()
+        active = {job.get('sourceId') for job in active_work(state)
                   if job.get('status') != 'harvested'}
         stale = {entity['id'] for entity in entities
                  if entity.get('templateType') == 'building_task'
@@ -204,7 +205,7 @@ class OriginalBuildingRules:
             if str(previous.get('materialType'))!=str(definition.get('materialType')):
                 key=str(previous['materialType'])
                 state['inventory'][key]=max(0,state['inventory'].get(key,0)-1)
-        elif kind in {'container_type','workshop'}:
+        elif kind == 'container_type':
             construction=self._item('building_task',foundation['templateId'])
             parent=construction.get('parentId','-1')
             previous=definition if parent=='-1' else self._item(
@@ -243,6 +244,8 @@ class OriginalBuildingRules:
                 raise ValueError('Upgraded shelter cannot hold its saved occupants')
             self.habitats.initialize(result)
         entities[:]=[v for v in entities if v.get('id')!=foundation['id']]+[result]
+        if job.get('family') == '2':
+            state.setdefault('completedFoundationJobs', {})[foundation['id']] = job['id']
         if kind == 'farm_building':
             self.reconcile_farm_foundations(state)
         response={'id':result['id'],'entityId':result['templateId']}
@@ -273,7 +276,7 @@ class OriginalBuildingRules:
                     and job.get('sourceId') not in entity_ids
                     and job.get('sourceSnapshot', {}).get('position', {}).get('areaId') == area_id
                     and is_plot_foundation(job.get('sourceSnapshot', {}))
-                    for job in state.get('workAreas', {}).values())
+                    for job in active_work(state))
         if used >= capacity:
             raise ValueError('Upgrade the farm house before adding another plot')
 
@@ -345,7 +348,7 @@ class OriginalBuildingRules:
         if definition.get('allowMultiple') == '0' and any(
             job.get('status') != 'harvested' and job.get('sourceSnapshot', {}).get('templateId') == task_id
             and job.get('position', {}).get('areaId') == position['areaId']
-            for job in state.get('workAreas', {}).values()
+            for job in active_work(state)
         ):
             raise ValueError('Building type is already under construction')
         entities = state['world']['entities']
@@ -391,13 +394,24 @@ class OriginalBuildingRules:
         foundation = next((entity for entity in entities if entity.get('id') == ident
                            and entity.get('templateType') == 'building_task'), None)
         if foundation is None:
-            if any(job.get('sourceId') == ident and job.get('family') == '2'
-                   and job.get('status') == 'harvested' for job in state.get('workAreas', {}).values()):
+            jobs = state.get('workAreas', {})
+            indexed = state.get('completedFoundationJobs', {}).get(ident)
+            candidates = [jobs.get(indexed)] if indexed else [
+                jobs.get(entity['sourceWorkAreaId']) for entity in entities if entity.get('sourceWorkAreaId')]
+            match = next((job for job in candidates if isinstance(job, dict)
+                          and job.get('sourceId') == ident and job.get('family') == '2'
+                          and job.get('status') == 'harvested'), None)
+            # Compatibility fallback for very old builds which saved neither
+            # a source index nor a sourceWorkAreaId on the completed building.
+            if match is None and not indexed:
+                match = next((job for job in jobs.values() if job.get('sourceId') == ident
+                              and job.get('family') == '2' and job.get('status') == 'harvested'), None)
+            if match is not None:
                 deleted.append(ident)
                 state['revision'] = int(state.get('revision', 0)) + 1
                 return {}
             raise ValueError('Unknown foundation')
-        for job in state.get('workAreas', {}).values():
+        for job in active_work(state):
             if job.get('status') != 'harvested' and job.get('sourceId') == ident:
                 job['sourceSnapshot'] = dict(foundation)
         state['world']['entities'] = [entity for entity in entities if entity.get('id') != ident]
@@ -418,7 +432,7 @@ class OriginalBuildingRules:
         if entity is None:
             raise ValueError('Unknown fun building')
         if any(job.get('status') != 'harvested' and job.get('sourceId') == ident
-               for job in state.get('workAreas', {}).values()):
+               for job in active_work(state)):
             raise ValueError('Building is in use')
         definition = self._item('fun_building', entity['templateId'])
         material = str(definition['materialType'])

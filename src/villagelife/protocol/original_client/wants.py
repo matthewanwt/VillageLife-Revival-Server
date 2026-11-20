@@ -1,8 +1,10 @@
 """Persistent daily wishes and original food/water consumption."""
 from __future__ import annotations
 import copy
+import json
+import math
 from decimal import Decimal
-from functools import cached_property
+from functools import cached_property, lru_cache
 from .daily import DailyLife, satisfy_wants
 from .interactive import OriginalInteractiveRules
 from .catalog import OriginalDefinitions
@@ -65,6 +67,23 @@ class OriginalWantRules:
     def shelter_want_age(self) -> int:
         return max(5, int(self.globals.get('villager_wants_shelter_at_age', 5)))
 
+    @cached_property
+    def shelter_materials(self):
+        return {int(row['materialType']): self.defs.item('material_type', row['materialType'])
+                for row in self.defs.rows('building_type') if row.get('entityRef') == 'shelter'}
+
+    def _default_shelter(self, state):
+        level = int(state.get('user', {}).get('userLevelID', 1))
+        choices = [ident for ident, row in self.shelter_materials.items()
+                   if int(row.get('area', 0)) in {0, state['areaId']}
+                   and int(row.get('unlockLevel', 0)) <= level
+                   and int(row.get('seasonal', 0)) == 0]
+        if choices:
+            return min(choices, key=lambda ident:(
+                int(self.shelter_materials[ident].get('area', 0)) != state['areaId'],
+                int(self.shelter_materials[ident].get('unlockLevel', 0)), ident))
+        return 131 if state['areaId'] == 1 else None
+
     def clear_ineligible_shelter_wants(self, state: dict, at: int) -> None:
         too_young = {person['id'] for person in self._actors(state)
                      if self.daily.world.current_age(person, at) < self.shelter_want_age()}
@@ -88,7 +107,7 @@ class OriginalWantRules:
                             and bed.get('villagerId') == actor['id']
                             for home in area_entities if home.get('templateType') == 'shelter'
                             for bed in home.get('beds', []))
-            return None if sheltered else 131
+            return None if sheltered else self._default_shelter(state)
         fires = [entity for entity in area_entities if entity.get('templateType') == 'fire_type']
         if any(fire.get('isBurning') and fire.get('endsAt', 0) > at for fire in fires):
             return None
@@ -120,8 +139,39 @@ class OriginalWantRules:
         level = int(state.get('user', {}).get('userLevelID', 1))
         return sorted(ident for ident, row in self.food_definitions.items()
                       if state['inventory'].get(str(ident), 0) >= 1
+                      and int(row.get('area', 0)) in {0, state['areaId']}
                       and int(row.get('unlockLevel', 0)) <= level
                       and int(row.get('seasonal', 0)) == 0)
+
+    @cached_property
+    def food_sources(self):
+        rewards = {}
+        for row in self.defs.rows('reward_set_item'):
+            ident = int(row['materialType'])
+            if (ident in self.food_definitions and float(row['quantity']) > 0
+                    and float(row['chance']) > 0):
+                rewards.setdefault(row['setId'], set()).add(ident)
+        tasks = {row['id']: rewards.get(row['rewardSet'], set()) for row in self.defs.rows('task')}
+        return {int(row['id']): tasks.get(row['task'], set()) for row in self.defs.rows('material_source')}
+
+    def _default_food(self, state, stocked):
+        if stocked:
+            return 107 if 107 in stocked else stocked[0]
+        level = int(state.get('user', {}).get('userLevelID', 1))
+        sources = {ident for entity in state['world']['entities']
+                   if entity.get('templateType') == 'material_source'
+                   and self.daily.world._area(entity) == state['areaId']
+                   for ident in self.food_sources.get(entity['templateId'], ())}
+        choices = [ident for ident in sources
+                   if int(self.food_definitions[ident].get('area', 0)) in {0, state['areaId']}
+                   and int(self.food_definitions[ident].get('unlockLevel', 0)) <= level
+                   and int(self.food_definitions[ident].get('seasonal', 0)) == 0]
+        if choices:
+            return min(choices, key=lambda ident:(int(self.food_definitions[ident].get('unlockLevel', 0)),ident))
+        # Retain the normal opening default when tiny fixtures have no sources;
+        # never request a Woodland-only food in another village.
+        original = self.food_definitions.get(107)
+        return 107 if original is not None and int(original.get('area', 1)) in {0,state['areaId']} else None
 
     def generate(self, state: dict, service: str, at: int) -> dict:
         wants = state.setdefault('wants', [])
@@ -145,6 +195,7 @@ class OriginalWantRules:
                     if want.get('wantableCategoryType') == category}
         changed = False
         food = self._food_choices(state) if category == 2 else []
+        default_food = self._default_food(state, food) if category == 2 else None
         for actor in people:
             ident = actor['id']
             previous = existing.get(ident)
@@ -152,6 +203,11 @@ class OriginalWantRules:
                 interval = int(self.globals[basic[2]])
                 last = state.get('needSatisfiedAt', {}).get(f'{ident}:{category}', -interval)
                 target = previous['MaterialID'] if previous is not None else basic[1]
+                if category == 2:
+                    definition = self.food_definitions.get(target)
+                    if previous is None or (definition is not None
+                            and int(definition.get('area', 0)) not in {0,state['areaId']}):
+                        target = default_food
                 if previous is None and food:
                     # Advance through foods already in stock at each new wish.
                     # Keep an outstanding wish stable until the player fulfils it.
@@ -226,6 +282,7 @@ class OriginalWantRules:
                 pending[key] = pending.get(key, 0) + amount
             state['revision'] = int(state.get('revision', 0)) + 1
 
+    @lru_cache(maxsize=512)
     def _consume_category(self,material:int)->int:
         category=self.defs.item('material_type',material)['categoryId'];seen=set()
         while category not in seen and category!='-1':
@@ -276,6 +333,38 @@ class OriginalWantRules:
             if 'WantID' in want:want['WantId']=want.pop('WantID')
         return response
 
+    @staticmethod
+    def _consumption_key(ident, material):
+        return json.dumps([ident, material], separators=(',', ':'))
+
+    def _consumption_index(self, state):
+        """Index legacy receipts once; ordinary feeding must not load cold history."""
+        if 'latestConsumptionReceipts' in state:
+            return state['latestConsumptionReceipts']
+        index = {}
+        clock = state.get('needSatisfiedAt', {})
+        for name in ('consumptionReceipts', 'directConsumptionReceipts'):
+            for key, record in state.get(name, {}).items():
+                if not isinstance(record, dict):
+                    continue
+                ident, material = record.get('villagerId'), record.get('materialId')
+                if not isinstance(ident, str) or type(material) is not int:
+                    continue
+                try:
+                    category = self._consume_category(material)
+                except (KeyError, ValueError):
+                    # Preserve unknown legacy records without letting one stop
+                    # ordinary feeding. Exact receipt-ID replays still work.
+                    continue
+                stamp = record.get('consumedAt', clock.get(ident + ':' + str(category), 0))
+                if type(stamp) not in (int, float) or not math.isfinite(stamp):
+                    continue
+                pair = self._consumption_key(ident, material)
+                if pair not in index or stamp > index[pair]['consumedAt']:
+                    index[pair] = {'collection': name, 'key': key, 'consumedAt': stamp}
+        state['latestConsumptionReceipts'] = index
+        return index
+
     def consume(self,state:dict,data:dict,at:int,receipt_key:str)->dict:
         ident=data.get('VillagerStringID');material=data.get('MaterialTypeID')
         if not isinstance(ident,str) or isinstance(material,bool) or not isinstance(material,int):
@@ -285,6 +374,7 @@ class OriginalWantRules:
         if self.daily.world._area(actor) != state['areaId']:
             raise ValueError('Villager is in another area')
         category=self._consume_category(material)
+        recent = self._consumption_index(state)
         requested=data.get('WantID')
         direct=state.setdefault('directConsumptionReceipts',{})
         if receipt_key in direct:
@@ -310,9 +400,10 @@ class OriginalWantRules:
             interval_key='thirstIntervalSec' if category==1 else 'hungerIntervalSec'
             globals_={row['label']:row['value'] for row in self.defs.rows('global')}
             interval=int(globals_[interval_key]);clock=state.setdefault('needSatisfiedAt',{})
-            for previous in list(state.get('consumptionReceipts',{}).values())+list(direct.values()):
-                satisfied_at=previous.get('consumedAt',clock.get(ident+':'+str(category),0))
-                if previous['villagerId']==ident and previous['materialId']==material and at-satisfied_at<=interval:
+            entry = recent.get(self._consumption_key(ident, material))
+            if entry is not None and at - entry['consumedAt'] <= interval:
+                previous = state.get(entry['collection'], {}).get(entry['key'])
+                if previous is not None:
                     return self._current_receipt(state,previous)
             want={'wantableCategoryType':category,'WantId':None}
         if want['wantableCategoryType'] != category:
@@ -343,6 +434,9 @@ class OriginalWantRules:
         record['response']['result'].pop('inventory', None)
         if want_id is None:direct[receipt_key]=copy.deepcopy(record)
         else:state.setdefault('consumptionReceipts',{})[str(want_id)]=copy.deepcopy(record)
+        recent[self._consumption_key(ident, material)] = {
+            'collection': 'directConsumptionReceipts' if want_id is None else 'consumptionReceipts',
+            'key': receipt_key if want_id is None else str(want_id), 'consumedAt': at}
         state['revision']=int(state.get('revision',0))+1
         return response
 

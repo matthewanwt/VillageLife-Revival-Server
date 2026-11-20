@@ -7,6 +7,7 @@ from decimal import Decimal
 from .catalog import OriginalDefinitions
 from .inventory import OriginalInventoryRules, spend_gems
 from .world import OriginalWorldRules
+from .birth_skills import skill_type
 
 
 class OriginalVillagerRules:
@@ -81,7 +82,7 @@ class OriginalVillagerRules:
         result=[]
         for ident in dict.fromkeys(ids):
             for skill in actors[ident].get('skills',[]):
-                kind=int(skill.get('skilltypeId',skill.get('skillTypeId')))
+                kind=skill_type(skill)
                 self.defs.item('villager_skill',kind)
                 result.append({'villagerId':ident,'skilltypeId':kind,
                                'skillOriginType':int(skill['skillOriginType'])})
@@ -101,8 +102,7 @@ class OriginalVillagerRules:
                      if int(row['id']) > 0 and int(row['area']) <= maximum}
         limit = int(world.global_value('skill_slots_max'))
         skills = actor.get('skills', [])
-        ranks = Counter(int(skill.get('skilltypeId', skill.get('skillTypeId')))
-                        for skill in skills)
+        ranks = Counter(map(skill_type, skills))
         if bundle:
             training = [skill for skill in sorted(available)
                         for _ in range(max(0, limit - ranks[skill]))]

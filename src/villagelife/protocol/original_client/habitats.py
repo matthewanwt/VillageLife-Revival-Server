@@ -22,7 +22,8 @@ from .shelter_removal import SERVICE as REMOVE_SHELTER, remove_shelter
 
 SHELTER_INTERVAL = 86400
 SHELTER_CAPACITIES = {0: 2, 1: 4, 2: 6, 3: 2, 4: 4, 5: 6, 6: 2, 7: 2}
-# 0.2.6 gave these preplaced Woodland shelters two assignable beds.
+# These eight Woodland hero homes retain the two-bed compatibility layout
+# supported by 0.2.6. They are homes in new villages too, not disposable scenery.
 LEGACY_WOODLAND_SHELTERS = frozenset(range(34, 42))
 SERVICES = {
     'ClientUserFireService/StartFire', 'ClientUserFireService/OilFire',
@@ -75,7 +76,7 @@ class OriginalHabitatRules:
         if entity.get('templateType') == 'fire_type':
             defaults = {'isBurning': 0, 'startsAt': 0, 'endsAt': 0, 'oilAppliedAt': 0}
         elif entity.get('templateType') == 'shelter':
-            if (legacy_import and self.world._area(entity) == 1
+            if (self.world._area(entity) == 1
                     and int(entity.get('templateId', -1)) in LEGACY_WOODLAND_SHELTERS):
                 legacy_capacity = 2
             is_home = bool(entity.get('localCreated') or entity.get('sourceWorkAreaId') or legacy_capacity)
