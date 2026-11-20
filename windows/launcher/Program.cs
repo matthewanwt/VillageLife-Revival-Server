@@ -6,51 +6,90 @@ using System.Text.Json;
 using System.Windows.Forms;
 
 namespace VillageLife;
-internal static class Program { [STAThread] static void Main() { ApplicationConfiguration.Initialize(); Application.Run(new VillageLifeWindow()); } }
+internal static class Program {
+    [STAThread] static void Main() {
+        ApplicationConfiguration.Initialize();
+        string profile=Path.GetDirectoryName(VillageLifeWindow.DefaultDatabase())!.ToUpperInvariant();
+        string key=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(profile)));
+        using var lease=new Mutex(true,@"Local\VillageLifeProfile-"+key,out bool created);
+        if(!created){MessageBox.Show("Village Life is already open for this save folder. Use that launcher or close it before opening another.","Village Life");return;}
+        using var installerMarker=new Mutex(false,@"Local\VillageLifeLauncherActive");
+        try { Application.Run(new VillageLifeWindow()); }
+        finally { lease.ReleaseMutex(); }
+    }
+}
 
 public sealed partial class VillageLifeWindow : Form {
     const string ReleaseVersion = "0.3.6";
+#if PRIVATE_CANDIDATE
+    const string ReleaseTitle = "Village Life — Private Audit Candidate";
+    const string DataFolder = "VillageLifeAuditPrivate";
+#else
     const string ReleaseTitle = "Village Life Community Update " + ReleaseVersion;
+    const string DataFolder = "VillageLifeRevivalNext";
+#endif
     sealed class Settings { public string GameTables { get; set; }=""; public string Xapk { get; set; }=""; public string Inventory { get; set; }=""; public string? Obb { get; set; } public int Port { get; set; }=80; public bool ClientPrepared { get; set; } public bool PreparedFilesReady { get; set; } public bool VillageChoiceMade { get; set; } public string ImportedVillage { get; set; }=""; public string LocalVillage { get; set; }=""; }
     readonly string root=Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName??AppContext.BaseDirectory;
-    static string DefaultDatabase() {
+    internal static string DefaultDatabase() {
         var alternate = Environment.GetEnvironmentVariable("VILLAGELIFE_DB");
         return string.IsNullOrWhiteSpace(alternate)
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"VillageLifeRevivalNext","worlds.sqlite3")
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),DataFolder,"worlds.sqlite3")
             : Path.GetFullPath(alternate);
     }
     readonly string defaultDatabase=DefaultDatabase();
     string state=>Path.GetDirectoryName(defaultDatabase)!;
     readonly TextBox output=new(){Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill,Font=new Font("Consolas",10),WordWrap=false};
-    readonly FlowLayoutPanel bar=new(){Dock=DockStyle.Top,Height=132,AutoScroll=true,WrapContents=true,Padding=new Padding(6)};
     readonly Label stage=new(){Dock=DockStyle.Bottom,Height=25,Padding=new Padding(8,4,0,0),Text="Click Play to start or resume setup."};
     readonly ProgressBar progress=new(){Dock=DockStyle.Bottom,Height=16,Minimum=0,Maximum=100,Value=0};
     readonly HttpClient http=new(){Timeout=TimeSpan.FromSeconds(4)}; readonly List<Button> actions=new(); Process? backend; bool closing,busy;
+    readonly CancellationTokenSource lifetime=new();
+    CancellationTokenSource? setupStep;
+    readonly HashSet<Process> ownedTools=new();
+    readonly OwnedProcessJob processJob=new();
+    readonly System.Threading.Channels.Channel<string> pendingLogs=System.Threading.Channels.Channel.CreateBounded<string>(
+        new System.Threading.Channels.BoundedChannelOptions(2000){FullMode=System.Threading.Channels.BoundedChannelFullMode.DropOldest,SingleReader=true});
+    readonly System.Windows.Forms.Timer logFlush=new(){Interval=200};
+    string verifiedExpansion="";
     string ServerExe=>Path.Combine(root,"bin","VillageLifeServer","VillageLifeServer.exe"); string SettingsFile=>Path.Combine(state,"launcher-settings.json");
     string BundledGame=>Path.Combine(root,"game-assets","Village-Life-Original.xapk");
     string PrivateAssets=>Path.Combine(root,"private-assets");
     string SigningJdkHome=>Path.Combine(root,"signing-tools","jdk");
     public VillageLifeWindow() {
-        Text=ReleaseTitle;Width=960;Height=660;MinimumSize=new(760,480);StartPosition=FormStartPosition.CenterScreen;
-        Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-        Controls.Add(output);Controls.Add(stage);Controls.Add(progress);Controls.Add(bar);
-        Add("Play",Play);Add("Stop",Stop);Add("Set Up Game",Setup);Add("Connection",Connection);Add("Save Backups",OpenData);Add("Logs",OpenData);Add("Help",Help);Add("Advanced diagnostics",Diagnostics);Add("Import 0.2.6 Save",async()=>{await ImportLegacy();});Add("Choose Village",ChooseVillage);Add("Add Gems",AddGems);
+        BuildDashboard();
         FormClosing+=async(_,e)=>{
-            if (closing || backend is not {HasExited:false}) return;
+            if (closing) return;
             closing=true;
+            lifetime.Cancel();
             if (e.CloseReason==CloseReason.WindowsShutDown) return;
             e.Cancel=true;
             try { await Stop(); }
             finally { Close(); }
         };
         gameMonitor.Tick+=CheckGameClosed;
-        FormClosed+=(_,_)=>gameMonitor.Dispose();
+        logFlush.Tick+=(_,_)=>FlushLogs();logFlush.Start();
+        Shown+=async(_,_)=>await RunAction("Refresh village details",RefreshVillageDetails);
+        FormClosed+=(_,_)=>{gameMonitor.Dispose();logFlush.Dispose();dashboardClock.Dispose();lifetime.Cancel();processJob.Dispose();};
         Log(ReleaseTitle);Log("Click Play. Village Life will guide you through any steps still needed.");
         if(!File.Exists(ServerExe))Log("[VL-BUILD-INCOMPLETE] Bundled server missing: "+ServerExe);
     }
-    void Add(string name,Func<Task> action){var b=new Button{Text=name,Width=150,Height=35,Margin=new Padding(4)};b.Click+=async(_,_)=>{if(busy){Log("Please wait for the current step to finish.");return;}busy=true;foreach(var item in actions)item.Enabled=false;try{await action();}catch(OperationCanceledException){SetStage(progress.Value,"Cancelled — choose an action when ready.");}catch(Exception e){SetStage(progress.Value,"Could not complete — see the message below.");Log("[VL-TOOL-FAILED] "+e.Message);}finally{busy=false;if(!IsDisposed)foreach(var item in actions)item.Enabled=true;}};actions.Add(b);bar.Controls.Add(b);}
-    void Log(string value){if(IsDisposed)return;if(InvokeRequired){BeginInvoke(()=>Log(value));return;}output.AppendText(DateTime.Now.ToString("HH:mm:ss")+"  "+value+Environment.NewLine);}
-    void SetStage(int value,string text){if(IsDisposed)return;if(InvokeRequired){BeginInvoke(()=>SetStage(value,text));return;}progress.Value=Math.Clamp(value,0,100);stage.Text=text;}
+    void Log(string value){if(!IsDisposed)pendingLogs.Writer.TryWrite(DateTime.Now.ToString("HH:mm:ss")+"  "+value+Environment.NewLine);}
+    void FlushLogs(){
+        var text=new StringBuilder();
+        for(int count=0;count<200 && pendingLogs.Reader.TryRead(out var line);count++)text.Append(line);
+        if(text.Length==0)return;
+        output.AppendText(text.ToString());
+        if(output.TextLength>200_000){output.Select(0,output.TextLength-150_000);output.SelectedText="";output.SelectionStart=output.TextLength;output.ScrollToCaret();}
+        try {
+            string logs=Path.Combine(state,"logs");Directory.CreateDirectory(logs);string file=Path.Combine(logs,"launcher.log");
+            if(File.Exists(file)&&new FileInfo(file).Length>2_000_000){File.Move(file+".1",file+".2",true);}
+        } catch(FileNotFoundException){} catch(IOException){} catch(UnauthorizedAccessException){}
+        try {
+            string file=Path.Combine(state,"logs","launcher.log");
+            if(File.Exists(file)&&new FileInfo(file).Length>2_000_000)File.Move(file,file+".1",true);
+            File.AppendAllText(file,text.ToString());
+        } catch(IOException){} catch(UnauthorizedAccessException){}
+    }
+    void SetStage(int value,string text){if(IsDisposed)return;if(InvokeRequired){BeginInvoke(()=>SetStage(value,text));return;}progress.Value=Math.Clamp(value,0,100);stage.Text=text;UpdateDashboardStatus(text);}
     Settings Read(){try{return JsonSerializer.Deserialize<Settings>(File.ReadAllText(SettingsFile))??new();}catch{return new();}}
     void Write(Settings s) {
         Directory.CreateDirectory(state);
@@ -63,8 +102,23 @@ public sealed partial class VillageLifeWindow : Form {
             File.Move(pending,SettingsFile,true);
         } finally { File.Delete(pending); }
     }
-    ProcessStartInfo Command(params string[] args){if(!File.Exists(ServerExe))throw new FileNotFoundException("Bundled new backend missing",ServerExe);var p=new ProcessStartInfo(ServerExe){WorkingDirectory=root,UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true,CreateNoWindow=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};foreach(var a in args)p.ArgumentList.Add(a);p.Environment["PYTHONUTF8"]="1";return p;}
-    async Task<(int,string,string)> Once(int seconds,params string[] args){using var p=Process.Start(Command(args))??throw new IOException("Could not start backend tool");var o=p.StandardOutput.ReadToEndAsync();var e=p.StandardError.ReadToEndAsync();using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(seconds));try{await p.WaitForExitAsync(deadline.Token);}catch(OperationCanceledException){p.Kill(true);throw new TimeoutException("[VL-TOOL-TIMEOUT]");}return(p.ExitCode,await o,await e);}
+    ProcessStartInfo Command(params string[] args){if(!File.Exists(ServerExe))throw new FileNotFoundException("Bundled new backend missing",ServerExe);var p=new ProcessStartInfo(ServerExe){WorkingDirectory=root,UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true,CreateNoWindow=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};foreach(var a in args)p.ArgumentList.Add(a);p.Environment["PYTHONUTF8"]="1";p.Environment["VILLAGELIFE_DB"]=defaultDatabase;return p;}
+    async Task<(int,string,string)> Once(int seconds,params string[] args){
+        lifetime.Token.ThrowIfCancellationRequested();
+        using var p=Process.Start(Command(args))??throw new IOException("Could not start backend tool");
+        try { processJob.Add(p); } catch { if(!p.HasExited)p.Kill(true);throw; }
+        ownedTools.Add(p);
+        var o=p.StandardOutput.ReadToEndAsync();var e=p.StandardError.ReadToEndAsync();
+        var stepToken=setupStep?.Token??CancellationToken.None;
+        using var deadline=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token,stepToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(seconds));
+        try { await p.WaitForExitAsync(deadline.Token);return(p.ExitCode,await o,await e); }
+        catch(OperationCanceledException){
+            try { if(!p.HasExited)p.Kill(true);await p.WaitForExitAsync(); } catch(InvalidOperationException){}
+            if(lifetime.IsCancellationRequested||stepToken.IsCancellationRequested)throw;
+            throw new TimeoutException("[VL-TOOL-TIMEOUT]");
+        } finally { ownedTools.Remove(p); }
+    }
     async Task Tool(params string[] args){var r=await Once(300,args);if(!string.IsNullOrWhiteSpace(r.Item2))Log(r.Item2.Trim());if(r.Item1!=0)throw new InvalidOperationException(string.IsNullOrWhiteSpace(r.Item3)?"[VL-TOOL-ERROR] Tool failed":r.Item3.Trim());}
     async Task ToolQuiet(params string[] args){var r=await Once(300,args);if(r.Item1!=0)throw new InvalidOperationException(string.IsNullOrWhiteSpace(r.Item3)?"[VL-TOOL-ERROR] Tool failed":r.Item3.Trim());}
     async Task ToolQuietWithin(int seconds,params string[] args){var r=await Once(seconds,args);if(r.Item1!=0)throw new InvalidOperationException(string.IsNullOrWhiteSpace(r.Item3)?"[VL-TOOL-ERROR] Tool failed":r.Item3.Trim());}
@@ -226,7 +280,8 @@ public sealed partial class VillageLifeWindow : Form {
     async Task StartServer(Settings s) {
         if (backend is {HasExited:false}) return;
         var command=Command("--db",VillageDatabase(s),"serve","--launcher-stdin","--port",s.Port.ToString(),"--game-tables",s.GameTables,
-                            "--xapk",s.Xapk,"--obb",s.Obb!,"--inventory",s.Inventory);
+                            "--xapk",s.Xapk,"--obb",s.Obb!,"--inventory",s.Inventory,
+                            "--transport-key-file",Path.Combine(state,"private-client","transport-key.txt"));
         if (string.IsNullOrEmpty(s.ImportedVillage) && !string.IsNullOrEmpty(s.LocalVillage)) {
             command.ArgumentList.Add("--local-village-id");
             command.ArgumentList.Add(s.LocalVillage);
@@ -234,6 +289,7 @@ public sealed partial class VillageLifeWindow : Form {
         command.RedirectStandardInput=true;
         backend=Process.Start(command)
                 ?? throw new IOException("Could not start the Village Life server");
+        try { processJob.Add(backend); } catch { if(!backend.HasExited)backend.Kill(true);throw; }
         var process=backend;
         _=Task.Run(async()=>{while(await process.StandardOutput.ReadLineAsync() is string line)Log(line);});
         var startupError=new TaskCompletionSource<string>();
@@ -298,7 +354,7 @@ public sealed partial class VillageLifeWindow : Form {
         SetStage(100,"BlueStacks can reach the local server.");
     }
     Task OpenData(){Directory.CreateDirectory(state);Process.Start(new ProcessStartInfo(state){UseShellExecute=true});return Task.CompletedTask;}
-    async Task Diagnostics(){SetStage(10,"Diagnostics: collecting guest network evidence…");await Tool("verify-network","--port",Read().Port.ToString());SetStage(75,"Diagnostics: exporting safe missing-request summary…");await Tool("--db",VillageDatabase(Read()),"export-missing-requests");SetStage(100,"Diagnostics complete — review the technical log above.");Log("[VL-NETWORK-UNVERIFIED] Tests collect evidence only; they do not create or certify an isolation policy.");}
+    async Task Diagnostics(){SetStage(10,"Diagnostics: collecting guest network evidence…");await Tool("verify-network","--port",Read().Port.ToString());SetStage(75,"Diagnostics: exporting safe missing-request summary…");await Tool("--db",VillageDatabase(Read()),"export-missing-requests");SetStage(100,"Diagnostics complete — open Technical log for the report location.");Log("[VL-NETWORK-UNVERIFIED] Tests collect evidence only; they do not create or certify an isolation policy.");}
     Task Help() {
         MessageBox.Show(this,"Click Play to open your village or resume setup. First-time setup uses a dedicated BlueStacks 5 Pie 64-bit instance.\n\nUse Import 0.2.6 Save to copy an older village. Choose Village switches between saved villages.\n\nUse Advanced diagnostics to report gameplay issues.","Village Life Help");
         return Task.CompletedTask;

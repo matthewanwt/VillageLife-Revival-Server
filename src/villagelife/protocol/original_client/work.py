@@ -1,11 +1,13 @@
 """Transactional original-client work, construction and harvesting."""
 from __future__ import annotations
+from villagelife.persistence.history import active_work
+from .indexes import entities_for_id
 import copy
 from decimal import Decimal
 import math
 import time
 import uuid
-from .catalog import OriginalDefinitions
+from .catalog import OriginalDefinitions, matching
 from .daily import satisfy_wants
 from .world import OriginalWorldRules
 from .inventory import OriginalInventoryRules, spend_gems
@@ -87,7 +89,7 @@ class OriginalWorkRules:
             raise ValueError('Source identifier required')
         if expected=='1' and source_id is not None and not isinstance(source_id,str):
             raise ValueError('Source identifier must be a string')
-        actors=[v for v in state['world']['entities'] if v.get('id')==villager and v.get('templateType')=='villager_type']
+        actors=entities_for_id(state, villager, 'villager_type')
         if len(actors)!=1:raise ValueError('Villager not found in this world')
         actor=actors[0]
         if self.world._area(actor)!=state['areaId']:raise ValueError('Villager in another village')
@@ -169,7 +171,7 @@ class OriginalWorkRules:
             anchors.append(target_position)
         if all(math.hypot(float(position['x']) - x, float(position['y']) - y) > 200 for x, y in anchors):
             raise ValueError('Task position is not close to the source')
-        for previous in state.get('workAreas',{}).values():
+        for previous in active_work(state):
             if previous['status']=='harvested':continue
             if previous['villagerId']==villager and previous['status']=='working' and previous['completionTime']>at:
                 raise ValueError('Villager is already working')
@@ -177,10 +179,10 @@ class OriginalWorkRules:
                 raise ValueError('Resource source is already occupied')
         if family=='1':
             concurrent=sum(v['status']!='harvested' and v['sourceId']==source['id']
-                           for v in state.get('workAreas',{}).values())
+                           for v in active_work(state))
             if concurrent>=int(workshop['tableCount']):raise ValueError('Workshop is full')
         reward_set=task['rewardSet']
-        rewards=[row for row in self.defs.rows('reward_set_item') if reward_set!='0' and row['setId']==reward_set]
+        rewards=matching(self.defs, 'reward_set_item', 'setId', reward_set) if reward_set!='0' else []
         if family in {'2','6'}:
             building=self.buildings.completion_definition(
                 {'templateId':int(upgrade_definition['id'])} if upgrade_definition else source)
@@ -289,7 +291,7 @@ class OriginalWorkRules:
 
     def overlay(self, state: dict, at: int, area_id: int) -> list[dict]:
         result=[]
-        for job in state.get('workAreas',{}).values():
+        for job in active_work(state):
             if job.get('status') == 'harvested' or self.world._area(job) != area_id:
                 continue
             task=self.defs.item('task',job['taskTypeId'])

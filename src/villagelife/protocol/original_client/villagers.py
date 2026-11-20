@@ -40,7 +40,8 @@ class OriginalVillagerRules:
         requested=data.get('userId',owner_id)
         if str(requested)!=str(owner_id):
             raise PermissionError('Villager history is limited to this village')
-        people=self._actors(state)+list(state.get('externalVillagers',{}).values())
+        people = (self._actors(state) + list(state.get('externalVillagers', {}).values())
+                  + list(state.get('retiredVillagers', {}).values()))
         by_id={p['id']:p for p in people}
         kinds={(int(row['Relationship']),int(row['genderTypeId'])):int(row['id'])
                for row in self.defs.rows('relation_type')}

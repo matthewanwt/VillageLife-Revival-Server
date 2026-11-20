@@ -344,11 +344,14 @@ class OriginalBuildingRules:
         position = self._position(state, data)
         if definition.get('allowMultiple') == '0' and any(
             job.get('status') != 'harvested' and job.get('sourceSnapshot', {}).get('templateId') == task_id
+            and job.get('position', {}).get('areaId') == position['areaId']
             for job in state.get('workAreas', {}).values()
         ):
             raise ValueError('Building type is already under construction')
         entities = state['world']['entities']
         for entity in entities:
+            if entity.get('position', {}).get('areaId') != position['areaId']:
+                continue
             if entity.get('templateType') == 'building_task' and entity.get('templateId') == task_id:
                 if entity.get('position') == position:
                     return {'userBuildingTask': self._placement(entity)}
@@ -361,7 +364,8 @@ class OriginalBuildingRules:
 
         existing = [entity for entity in entities
                     if entity.get('templateType') == building['entityRef']
-                    and entity.get('templateId') == int(building['entityID'])]
+                    and entity.get('templateId') == int(building['entityID'])
+                    and entity.get('position', {}).get('areaId') == position['areaId']]
         if definition.get('allowMultiple') == '0' and existing:
             placeholder = (building['entityRef'] in {'container_type', 'workshop'} and len(existing) == 1
                            and not existing[0].get('localCreated')

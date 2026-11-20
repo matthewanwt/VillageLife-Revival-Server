@@ -1,5 +1,6 @@
 """Original paired care activities, with durable completion and repeat timing."""
 from __future__ import annotations
+from villagelife.persistence.history import active_work
 
 from decimal import Decimal
 from functools import cached_property
@@ -67,7 +68,7 @@ class OriginalInteractiveRules:
             raise ValueError('Activity repeat delay has not elapsed')
         if any(job.get('villagerId') in {requester['id'], supplier['id']}
                and job.get('status') == 'working' and job['completionTime'] > at
-               for job in state.get('workAreas', {}).values()):
+               for job in active_work(state)):
             raise ValueError('A villager is still working')
 
         deductions = {}

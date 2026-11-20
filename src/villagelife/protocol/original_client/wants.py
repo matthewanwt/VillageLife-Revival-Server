@@ -7,14 +7,16 @@ from .daily import DailyLife, satisfy_wants
 from .interactive import OriginalInteractiveRules
 from .catalog import OriginalDefinitions
 from .inventory import OriginalInventoryRules
+from .retirement import active_retirements
 
+RETIREMENT_WANTS = 'GenerateRetirementWants'
 
 class OriginalWantRules:
     BASIC={'ClientWant/GenerateWaterWants':(1,6,'thirstIntervalSec'),
            'ClientWant/GenerateFoodWants':(2,107,'hungerIntervalSec')}
     CATEGORIES = {'GenerateFunWants': 3, 'GenerateFireWants': 4,
                   'GenerateShelterWants': 6, 'GenerateInteractiveWants': 8,
-                  'GenerateRetirementWants': 9}
+                  RETIREMENT_WANTS: 9}
 
     def __init__(self, definitions: OriginalDefinitions,
                  inventory: OriginalInventoryRules | None = None):
@@ -77,11 +79,6 @@ class OriginalWantRules:
         if category == 8:
             options = self.interactive.available(state, actor, actors, at)
             return int(options[0]['materialType']) if options else None
-        if category == 9:
-            # Respect existing authored/saved Final Journey schedules.
-            if int(actor.get('retireEventID', 0)) > 0 and int(actor.get('retireAt', 0)) > at:
-                return 1966
-            return None
         if self.daily.world.current_age(actor, at) < int(self.globals.get('villager_wants_shelter_at_age', 4)):
             return None
         if category == 6:
@@ -137,6 +134,11 @@ class OriginalWantRules:
         category = basic[0] if basic else self.CATEGORIES[method]
         actors = self._actors(state)
         people = [person for person in actors if self.daily.world._area(person) == state['areaId']]
+        retirement = {}
+        if method == RETIREMENT_WANTS:
+            for person, event in active_retirements(state, self.defs, at):
+                retirement[person['id']] = {'VillagerID': person['id'], 'RetireAt': int(person['retireAt']),
+                                            'RetireEventID': int(event['id'])}
         area_entities = [entity for entity in state['world']['entities']
                          if self.daily.world._area(entity) == state['areaId']]
         existing = {want['VillagerStringID']: want for want in wants
@@ -160,6 +162,8 @@ class OriginalWantRules:
                         target = next((value for value in food if value > last_food), food[0])
                 material = (target if at - last >= interval
                             and not self.daily.in_group(actor, '6', at) else None)
+            elif method == RETIREMENT_WANTS:
+                material = 1966 if ident in retirement else None
             else:
                 material = self._target(state, actor, category, area_entities, actors, at)
             if previous is not None and (material is None or previous['MaterialID'] != material):
@@ -173,6 +177,13 @@ class OriginalWantRules:
                 changed = True
         if changed:
             state['revision'] = int(state.get('revision', 0)) + 1
+        if method == RETIREMENT_WANTS:
+            # ServerSyncUpdate expects the schedule and wants under separate
+            # keys in this response. Other want families use a plain list.
+            return {'result': {'RetireVillagers': list(retirement.values()),
+                               'RetireWantModels': [dict(want) for want in wants
+                                                    if want.get('wantableCategoryType') == 9
+                                                    and want['VillagerStringID'] in retirement]}}
         return {'result': copy.deepcopy(wants)}
 
     def on_login(self, state: dict, at: int) -> None:
@@ -223,6 +234,28 @@ class OriginalWantRules:
             seen.add(category)
             category=self.defs.item('material_category',category)['parentId']
         raise ValueError('Direct consumption requires original food or drink')
+
+    @staticmethod
+    def compact_consumption_history(state: dict) -> int:
+        """Drop inventory snapshots that _current_receipt always reconstructs.
+
+        Keep every receipt, timestamp, want ID and happiness field so retries
+        remain safe. Unknown fields and other history collections are untouched.
+        """
+        removed = 0
+        for name in ('consumptionReceipts', 'directConsumptionReceipts'):
+            records = state.get(name, {})
+            if not isinstance(records, dict):
+                continue
+            for record in records.values():
+                response = record.get('response') if isinstance(record, dict) else None
+                if not isinstance(response, dict):
+                    continue
+                for target in (response, response.get('result')):
+                    if isinstance(target, dict) and 'inventory' in target:
+                        del target['inventory']
+                        removed += 1
+        return removed
 
     def _current_receipt(self,state:dict,record:dict)->dict:
         response=copy.deepcopy(record['response'])
@@ -305,6 +338,9 @@ class OriginalWantRules:
         if want_id is not None:result.update(WantID=want_id,wantID=want_id)
         response={**result,'result':copy.deepcopy(result)}
         record={'villagerId':ident,'materialId':material,'response':copy.deepcopy(response),'consumedAt':at}
+        # Replay uses current inventory, never this historical snapshot.
+        record['response'].pop('inventory', None)
+        record['response']['result'].pop('inventory', None)
         if want_id is None:direct[receipt_key]=copy.deepcopy(record)
         else:state.setdefault('consumptionReceipts',{})[str(want_id)]=copy.deepcopy(record)
         state['revision']=int(state.get('revision',0))+1

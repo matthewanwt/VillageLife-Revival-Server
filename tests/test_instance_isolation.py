@@ -42,6 +42,7 @@ class InstanceIsolationTests(unittest.TestCase):
             obb = root / OBB_NAME
             obb.write_bytes(b'obb')
             with patch('villagelife.platforms.original_client.prepared_apk_installed', return_value=True), \
+                    patch('villagelife.platforms.original_client._obb_digest_matches', return_value=True), \
                     patch('villagelife.platforms.original_client._obb_matches',
                           side_effect=[False, False, True, True]), \
                     patch('villagelife.platforms.original_client._adb',

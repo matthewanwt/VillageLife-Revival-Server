@@ -9,6 +9,7 @@ This is NOT a distribution/redistribution licence or a network-isolation tool.
 from __future__ import annotations
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import secrets
@@ -16,6 +17,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+from villagelife.core.limits import validate_apk_archive, MAX_ARCHIVE_ENTRIES
 
 # Recoverable endpoint configuration from the verified historical client.
 PATCHES={
@@ -32,9 +34,13 @@ GOOGLE_GAMES_DISABLED=b'PARAM_AND_GAMEPLAYSERVICES_GOOGLE\x00\x00\x00NO\x00\x00'
 def digest(path:Path)->str:
     with path.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
 
-def patch_library(data:bytes)->bytes:
+def patch_library(data:bytes, transport_key: str | None = None)->bytes:
     original=data
     for old,new in PATCHES.items():
+        if transport_key is not None:
+            if len(transport_key) != 12 or any(c not in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_' for c in transport_key):
+                raise ValueError('Invalid native transport capability')
+            new = new.replace(b'10.0.2.2/', b'10.0.2.2/' + transport_key.encode('ascii') + b'/')
         if len(new)>len(old):raise ValueError('Replacement exceeds original binary constant')
         count=data.count(old+b'\0')
         if count!=1:raise ValueError(f'Expected exactly one original endpoint; found {count}')
@@ -58,6 +64,8 @@ def unpack_game(source:Path,out:Path)->tuple[Path,Path]:
     source=source.expanduser().resolve(strict=True)
     out=out.expanduser().resolve();out.mkdir(parents=True,exist_ok=True)
     with zipfile.ZipFile(source) as archive:
+        if len(archive.infolist()) > MAX_ARCHIVE_ENTRIES:
+            raise ValueError('XAPK contains too many entries')
         members={v.filename:v for v in archive.infolist() if not v.is_dir()}
         # APKPure XAPKs commonly put the expansion file below Android/obb/;
         # only the package-named base APK and its package-named main OBB are
@@ -80,15 +88,16 @@ def unpack_game(source:Path,out:Path)->tuple[Path,Path]:
             finally:temporary.unlink(missing_ok=True)
     return raw,expansion
 
-def make_unsigned(original_apk:Path,out:Path)->Path:
+def make_unsigned(original_apk:Path,out:Path, transport_key: str | None = None)->Path:
     target=out/'client-local-unsigned.apk'
     with zipfile.ZipFile(original_apk) as source,zipfile.ZipFile(target,'w') as dest:
+        validate_apk_archive(source)
         if 'lib/armeabi-v7a/libpdandroid.so' not in source.namelist():
             raise ValueError('Unsupported original APK: ARM32 game library absent')
         for entry in source.infolist():
             if entry.is_dir() or entry.filename.upper().startswith('META-INF/'):continue
             raw=source.read(entry)
-            if entry.filename=='lib/armeabi-v7a/libpdandroid.so':raw=patch_library(raw)
+            if entry.filename=='lib/armeabi-v7a/libpdandroid.so':raw=patch_library(raw, transport_key)
             dest.writestr(entry,raw)
     return target
 
@@ -107,23 +116,30 @@ def sign_local(unsigned:Path,out:Path,java_home:Path|None=None)->Path:
     if not keytool or not signer:
         raise FileNotFoundError('Java JDK keytool and jarsigner required for the private client')
     sign_dir=out/'signing';sign_dir.mkdir(parents=True,exist_ok=True)
-    key=sign_dir/'village-local-signing.p12'
-    password_file=sign_dir/'private-password.txt'
+    legacy_key=sign_dir/'village-local-signing.p12'
+    legacy_password=sign_dir/'private-password.txt'
+    identity = sign_dir if legacy_key.exists() or legacy_password.exists() else sign_dir/'identity'
+    key=identity/'village-local-signing.p12'
+    password_file=identity/'private-password.txt'
     if key.exists()!=password_file.exists():
         raise ValueError('Existing signing identity is incomplete; restore its backup before proceeding')
     if not key.exists():
         password=secrets.token_urlsafe(32)
-        password_file.write_text(password,encoding='utf-8')
-        try:os.chmod(password_file,0o600)
-        except OSError:pass
         env={**os.environ,'VL_SIGNING_PASSWORD':password}
-        cmd=[keytool,'-genkeypair','-alias','preservation-local',
-             '-keystore',str(key),'-storetype','PKCS12',
-             '-storepass:env','VL_SIGNING_PASSWORD',
-             '-keyalg','RSA','-keysize','2048','-validity','3650',
-             '-dname','CN=Village Life Private Local Test']
-        subprocess.run(cmd,check=True,timeout=90,env=env,capture_output=True,text=True,
-                       creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        with tempfile.TemporaryDirectory(prefix='.identity-',dir=sign_dir) as pending:
+            pending=Path(pending)
+            cmd=[keytool,'-genkeypair','-alias','preservation-local',
+                 '-keystore',str(pending/key.name),'-storetype','PKCS12',
+                 '-storepass:env','VL_SIGNING_PASSWORD',
+                 '-keyalg','RSA','-keysize','2048','-validity','3650',
+                 '-dname','CN=Village Life Private Local Test']
+            subprocess.run(cmd,check=True,timeout=90,env=env,capture_output=True,text=True,
+                           creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            (pending/password_file.name).write_text(password,encoding='utf-8')
+            try:os.chmod(pending/password_file.name,0o600)
+            except OSError:pass
+            # Publish the pair together; cancelled first setup cannot leave one half.
+            pending.rename(identity)
     else:
         password=password_file.read_text(encoding='utf-8')
     env={**os.environ,'VL_SIGNING_PASSWORD':password}
@@ -155,9 +171,21 @@ def main(argv=None):
     parser.add_argument('--skip-sign',action='store_true',
                         help='Diagnostics only: unsigned APK cannot be installed')
     args=parser.parse_args(argv)
+    args.output.mkdir(parents=True,exist_ok=True)
+    receipt=args.output/'prepared-client.json'
+    receipt.unlink(missing_ok=True)
     original_hash=digest(args.xapk)
     raw,obb=unpack_game(args.xapk,args.output)
-    unsigned=make_unsigned(raw,args.output)
+    capability_file = args.output / 'transport-key.txt'
+    existing_key=capability_file.read_text(encoding='ascii',errors='replace').strip() if capability_file.exists() else ''
+    if len(existing_key)!=12 or any(c not in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_' for c in existing_key):
+        pending_key=capability_file.with_suffix('.txt.pending')
+        pending_key.write_text(secrets.token_urlsafe(9),encoding='ascii')
+        os.replace(pending_key,capability_file)
+        try: os.chmod(capability_file, 0o600)
+        except OSError: pass
+    transport_key = capability_file.read_text(encoding='ascii').strip()
+    unsigned=make_unsigned(raw,args.output,transport_key)
     if args.prepare_data:
         from villagelife.protocol.original_client.source_assets import derive_runtime_assets
         derive_runtime_assets(obb,args.output)
@@ -165,6 +193,11 @@ def main(argv=None):
         google_games_disabled=GOOGLE_GAMES_DISABLED in prepared_apk.read('lib/armeabi-v7a/libpdandroid.so')
     signed=None if args.skip_sign else sign_local(unsigned,args.output,args.java_home)
     if digest(args.xapk)!=original_hash:raise ValueError('Original XAPK changed during preparation')
+    if signed is not None:
+        pending_receipt=receipt.with_suffix('.json.pending')
+        pending_receipt.write_text(json.dumps({'version':1,'archive_sha256':original_hash,
+            'apk_sha256':digest(signed),'transport_key_sha256':hashlib.sha256(transport_key.encode()).hexdigest()}),encoding='utf-8')
+        os.replace(pending_receipt,receipt)
     print('Original archive untouched:',True)
     print('Original archive SHA-256:',original_hash)
     print('OBB prepared:',obb)

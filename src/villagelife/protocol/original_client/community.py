@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import time
 import uuid
+from threading import Lock
 
-from villagelife.support import record_missing, record_original_call
+from villagelife.support import record_missing, record_original_call, batch_diagnostics
 from .randomness import new_state
 from .relationships import COMMUNITY_SERVICES
 from .sessions import ClientIdentity
+from .indexes import entity_scope
 
 EMPTY_LISTS = {
     'UserMessage/GetInbox': ('UserMessages', 'FriendshipRequests', 'GroupRequests',
@@ -24,7 +26,22 @@ class CommunityRules:
         self.repo = repo
         self.sessions = sessions
         self.dating = dating
-        self.active_identity: ClientIdentity | None = None
+        self._identities = {}
+        self._identity_lock = Lock()
+        self._active_identity = None
+
+    @property
+    def active_identity(self):
+        return self._active_identity
+
+    @active_identity.setter
+    def active_identity(self, identity):
+        with self._identity_lock:
+            self._active_identity = identity
+            if identity is not None:
+                if len(self._identities) >= 128 and identity.player_id not in self._identities:
+                    self._identities.pop(next(iter(self._identities)))
+                self._identities[identity.player_id] = identity
 
     def identify(self, document):
         owner = str(document.get('UserId', 0))
@@ -37,8 +54,12 @@ class CommunityRules:
         # The native community envelope supplies UserId only. The private
         # loopback server binds that envelope to its latest authenticated game
         # session, regardless of how many older devices are in the database.
-        active = self.active_identity
-        return active if active is not None and active.player_id == owner else None
+        # The HTTP adapter requires the prepared APK's private capability before
+        # this legacy envelope is admitted. Bind each owner independently, and
+        # reject old login identities instead of trusting a mutable latest owner.
+        with self._identity_lock:
+            active = self._identities.get(owner)
+        return active if active is not None and self.sessions.identity_is_current(active) else None
 
     def dispatch(self, ident, service, data):
         if not isinstance(data, dict):
@@ -55,7 +76,7 @@ class CommunityRules:
             if state is None:
                 if service == 'CharacterRequest/GetReceived':
                     return {'CharacterRequests': []}
-                raise ValueError('Normal world required for dating')
+                raise PermissionError('Community village is not ready for dating')
             at = int(time.time())
             if service == 'CharacterRequest/GetReceived':
                 return self.dating.inbox(state, at, ident.player_id)
@@ -89,6 +110,10 @@ class CommunityRules:
         return result
 
     def process(self, document):
+        with self.repo.request_scope(), batch_diagnostics(self.repo), entity_scope():
+            return self._process(document)
+
+    def _process(self, document):
         calls = document.get('Calls')
         if (not isinstance(calls, list) or not 1 <= len(calls) <= 250
                 or any(not isinstance(c, dict) for c in calls)):

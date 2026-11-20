@@ -5,6 +5,7 @@ import uuid
 from decimal import Decimal
 from .catalog import OriginalDefinitions
 from .inventory import OriginalInventoryRules
+from .retirement import QUEST_TYPE as FAREWELL_QUEST
 
 
 class OriginalQuestRules:
@@ -79,6 +80,8 @@ class OriginalQuestRules:
         if ident in completed:return copy.deepcopy(completed[ident]['response'])
         quest=next((row for row in state.setdefault('quests',[]) if row.get('id')==ident),None)
         if quest is None:raise ValueError('Unknown local quest')
+        if quest['questTypeId'] == FAREWELL_QUEST:
+            raise ValueError('Finish Farewell through the departure dialogue')
         definition=self.defs.item('quest_type',quest['questTypeId'])
         target=definition['targetObjectType'];obj=quest['objectId']
         amount=quest['amount'];reward_set='0'

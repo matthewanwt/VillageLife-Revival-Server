@@ -12,7 +12,11 @@ import logging
 import os
 import re
 import socket
-from threading import Lock
+import zlib
+import secrets
+from threading import Lock, BoundedSemaphore
+from villagelife.core.validation import validate_json_tree
+from villagelife.persistence.history import json_default
 from villagelife.core.errors import (InvalidAction, NotFound, RevisionConflict,
                                        DuplicateActionConflict, NotImplementedRule)
 from villagelife.core.model import empty_native_village
@@ -41,7 +45,7 @@ class ApiServer(ThreadingHTTPServer):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         super().server_bind()
 
-    def __init__(self, address, repo: SqliteSaveRepository, original=None, assets=None):
+    def __init__(self, address, repo: SqliteSaveRepository, original=None, assets=None, transport_key=None):
         super().__init__(address, ApiHandler)
         self.repo = repo
         self.original = original
@@ -51,11 +55,57 @@ class ApiServer(ThreadingHTTPServer):
         self.ticks = WorldTickCoordinator(repo, SystemClock())
         self.original_login_count = 0
         self.original_login_lock = Lock()
+        self.transport_key = transport_key
+        self._workers = BoundedSemaphore(32)
+
+    def process_request(self, request, client_address):
+        if not self._workers.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._workers.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._workers.release()
 
 
 class ApiHandler(BaseHTTPRequestHandler):
     server: ApiServer
     protocol_version = 'HTTP/1.1'
+    timeout = 15
+
+    def parse_request(self):
+        if not super().parse_request():
+            return False
+        host = self.headers.get('Host', '').split(':', 1)[0].lower()
+        if (host not in {'127.0.0.1', 'localhost', '10.0.2.2'}
+                or len(self.headers.get_all('Host', [])) != 1
+                or self.headers.get('Origin') is not None
+                or self.headers.get('Sec-Fetch-Site') is not None):
+            self.send_error(403, 'Native local client required')
+            self.close_connection = True
+            return False
+        if (self.headers.get('Transfer-Encoding') is not None
+                or len(self.headers.get_all('Content-Length', [])) > 1):
+            self.send_error(400, 'Unsupported request framing')
+            self.close_connection = True
+            return False
+        path = urlsplit(self.path).path
+        if self.server.transport_key and path != '/health' and not path.startswith('/v1/'):
+            prefix = '/' + self.server.transport_key + '/'
+            supplied = self.path[:len(prefix)]
+            if not secrets.compare_digest(supplied.encode('utf-8'), prefix.encode('ascii')):
+                self.send_error(403, 'Local client capability required')
+                self.close_connection = True
+                return False
+            self.path = '/' + self.path[len(prefix):]
+        return True
 
     def log_message(self, fmt: str, *args) -> None:
         # BaseHTTPRequestHandler's default request log includes the FULL URL,
@@ -67,7 +117,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         LOG.info('client_http method=%s status=%s', self.command, status)
 
     def _json(self, status: int, data: dict[str, Any]) -> None:
-        payload = json.dumps(data, ensure_ascii=False, allow_nan=False).encode('utf-8')
+        payload = json.dumps(data, ensure_ascii=False, allow_nan=False, default=json_default).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(payload)))
@@ -86,6 +136,7 @@ class ApiHandler(BaseHTTPRequestHandler):
         payload = json.loads(raw.decode('utf-8'))
         if not isinstance(payload, dict):
             raise InvalidAction('JSON object required')
+        validate_json_tree(payload, max_depth=48, max_nodes=100000)
         return payload
 
     def _auth(self) -> str:
@@ -222,7 +273,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._binary(400,b'Invalid request length','text/plain')
         try:
             request,mode=original_decode(self.rfile.read(int(n)))
-        except (ValueError,UnicodeError,TypeError):
+            validate_json_tree(request, max_depth=48, max_nodes=100000)
+        except (ValueError,UnicodeError,TypeError,zlib.error,RecursionError,InvalidAction):
             self.close_connection=True
             return self._binary(400,b'Unrecognised original request encoding','text/plain')
         try:
@@ -256,6 +308,8 @@ class ApiHandler(BaseHTTPRequestHandler):
             return self._binary(500,b'Original-client service error','text/plain')
 
     def _fail(self, error: Exception) -> None:
+        if self.command == 'POST':
+            self.close_connection = True
         if isinstance(error, PermissionError):
             return self._json(401, {'error': str(error)})
         if isinstance(error, NotFound):
@@ -267,14 +321,14 @@ class ApiHandler(BaseHTTPRequestHandler):
         if isinstance(error, NotImplementedRule):
             self._record_missing(self.command, urlsplit(self.path).path, 501)
             return self._json(501, {'error': str(error)})
-        if isinstance(error, (InvalidAction, ValueError, UnicodeError, json.JSONDecodeError)):
+        if isinstance(error, (InvalidAction, ValueError, UnicodeError, json.JSONDecodeError, RecursionError)):
             return self._json(400, {'error': str(error)})
         LOG.exception('Unexpected API failure')
         return self._json(500, {'error': 'Internal server error'})
 
 
-def serve(repo: SqliteSaveRepository, port: int = 8765, *, original=None, assets=None) -> None:
-    with ApiServer(('127.0.0.1', port), repo, original, assets) as server:
+def serve(repo: SqliteSaveRepository, port: int = 8765, *, original=None, assets=None, transport_key=None) -> None:
+    with ApiServer(('127.0.0.1', port), repo, original, assets, transport_key=transport_key) as server:
         begin_diagnostic_run(repo)
         LOG.info('Village Life new API listening on 127.0.0.1:%d', port)
         server.serve_forever(poll_interval=0.2)

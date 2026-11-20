@@ -6,6 +6,7 @@ an original-game rule provider and is not implemented until verified.
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
+import hashlib
 from villagelife.core.errors import InvalidAction, NotImplementedRule
 from villagelife.core.rules import NoVerifiedRules, TaskRuleProvider
 
@@ -90,22 +91,21 @@ class WorldTickCoordinator:
         due_ids = [key for key, job in snapshot.payload.get('jobs', {}).items()
                    if job.get('status') == 'working' and isinstance(job.get('dueAt'), int)
                    and job['dueAt'] <= self.clock.now()]
-        transitioned = []
-        for key in sorted(due_ids):
-            def transition(state, *, job_id=key):
-                updated = JobService.advance_one(state, job_id, self.clock.now())
-                return {'readyJobIds': [job_id] if updated else [], 'trigger': job_id}
-            # Idempotent by job. Concurrent tick workers won't duplicate effects.
-            _, response, _ = self.store.mutate(
-                village_id, operation_key='system:due:'+key,
-                request={'action': 'job.ready', 'jobId': key}, change=transition)
-            transitioned.extend(response['readyJobIds'])
-        return sorted(set(transitioned))
+        if not due_ids:
+            return []
+        due_ids = sorted(due_ids)
+        def transition(state):
+            return {'readyJobIds': [key for key in due_ids
+                    if JobService.advance_one(state, key, self.clock.now())]}
+        key = hashlib.sha256(repr(due_ids).encode()).hexdigest()
+        _, response, repeated = self.store.mutate(village_id, operation_key='system:due-batch:' + key,
+            request={'action': 'jobs.ready', 'jobIds': due_ids}, change=transition)
+        return [] if repeated else response['readyJobIds']
 
     def advance_all(self) -> dict[str, list[str]]:
         result = {}
-        for snapshot in self.store.list_all_villages():
-            due = self.advance_village(snapshot.village_id)
+        for village_id in self.store.due_villages(self.clock.now()):
+            due = self.advance_village(village_id)
             if due:
-                result[snapshot.village_id] = due
+                result[village_id] = due
         return result

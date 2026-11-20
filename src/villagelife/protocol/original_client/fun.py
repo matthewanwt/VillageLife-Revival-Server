@@ -1,5 +1,6 @@
 """Source-backed villager fun actions and durable fun-building wear."""
 from __future__ import annotations
+from villagelife.persistence.history import active_work
 
 import copy
 from decimal import Decimal
@@ -123,7 +124,7 @@ class OriginalFunRules:
         if any(job.get('villagerId') == actor['id'] and
                job.get('status') == 'working' and
                int(job.get('completionTime', 0)) > at
-               for job in state.get('workAreas', {}).values()):
+               for job in active_work(state)):
             raise ValueError('Villager is still working')
         if building is not None and int(building.get('amount', 0)) <= 0:
             raise ValueError('Fun building has no uses remaining')

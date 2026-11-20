@@ -8,6 +8,7 @@ import copy
 import hashlib
 import logging
 import time
+from time import perf_counter
 import uuid
 from typing import Any
 from villagelife.persistence.sqlite_store import SqliteSaveRepository
@@ -30,16 +31,18 @@ from villagelife.protocol.original_client.habitats import SERVICES as HABITAT_SE
 from villagelife.protocol.original_client.fun import OriginalFunRules
 from .interactive import SERVICE as INTERACTIVE_SERVICE
 from .community import CommunityRules
+from .retirement import RETIRE, QUEST_TYPE as FAREWELL_QUEST, OriginalRetirementRules
 from .family import CONCEIVE, OriginalFamilyRules, SERVICES as FAMILY_SERVICES
 from .timers import gem_price
 from .life_stages import ACK_MESSAGE, ACK_NOTICE, CHOOSE_SKILL, OriginalLifeStages
-from .charms import OriginalBabyCharmRules, SERVICES as BABY_CHARM_SERVICES
+from .charms import RECRUIT, OriginalBabyCharmRules, SERVICES as BABY_CHARM_SERVICES
 from .marriage import OriginalMarriageRules, READS as MARRIAGE_READS, SERVICES as MARRIAGE_SERVICES
 from .relationships import OriginalDatingRules, SERVICES as DATING_SERVICES
 from .learning import OriginalLearningRules, SERVICES as LEARNING_SERVICES
-from villagelife.support import record_missing, record_original_call
+from villagelife.support import record_missing, record_original_call, batch_diagnostics
 from villagelife.core.errors import DuplicateActionConflict
 from villagelife.protocol.original_client.native_ids import mappings, translate
+from .indexes import entity_scope
 
 LOG = logging.getLogger(__name__)
 BIRTH_COST_CHECKS = BABY_CHARM_SERVICES | {
@@ -73,7 +76,7 @@ ECONOMY_SERVICES={'ClientMaterialService/BuyMaterialType',
                   'ClientMaterialService/SellMaterialType',
                   'ClientFortune/GetWOFSpinResult'}
 USER_BUNDLE_SERVICES={'ClientUserBundleService/CreateUserBundle'}
-QUEST_SERVICES={'ClientQuestService/AddQuest','ClientQuestService/CompleteQuest'}
+QUEST_SERVICES={'ClientQuestService/AddQuest','ClientQuestService/CompleteQuest',RETIRE}
 PROGRESSION_SERVICES={'ClientUser/IncreaseLevel','ClientUser/CompleteTutorial'}
 WANT_SERVICES={
     'ClientWant/GenerateWaterWants','ClientWant/GenerateFoodWants',
@@ -113,6 +116,7 @@ class OriginalClientGame:
         self.villagers=OriginalVillagerRules(definitions)
         self.progression=OriginalProgressionRules(definitions)
         self.quests=OriginalQuestRules(definitions,self.materials)
+        self.retirement = OriginalRetirementRules(definitions)
         self.wants=OriginalWantRules(definitions,self.materials)
         self.dating=OriginalDatingRules(self.world,self.wants)
         self.marriage=OriginalMarriageRules(self.dating)
@@ -171,6 +175,7 @@ class OriginalClientGame:
                 change=reconcile_farm)
             def on_login(payload):
                 normal = payload['originalSave']['normal']
+                self.wants.compact_consumption_history(normal)
                 self.materials.restore_starter_tools(normal)
                 self.wants.clear_ineligible_shelter_wants(normal, int(time.time()))
                 self.quests.reconcile_travel(normal, int(time.time()))
@@ -184,6 +189,14 @@ class OriginalClientGame:
         return {'code':200,'data':{'users':[profile]}}
 
     def process(self, request:dict)->dict:
+        with self.repo.request_scope(), batch_diagnostics(self.repo), entity_scope():
+            started = perf_counter()
+            try:
+                return self._process(request)
+            finally:
+                self.repo.observe('request', (perf_counter() - started) * 1000)
+
+    def _process(self, request:dict)->dict:
         calls=request.get('data',{}).get('calls')
         if not isinstance(calls,list) or len(calls)>250:raise ValueError('calls array required, max 250')
         if any(not isinstance(c,dict) for c in calls):raise ValueError('Every original call must be an object')
@@ -222,6 +235,8 @@ class OriginalClientGame:
                     'data':{'calls':[{'id':str(c.get('id','')), 'code':400,
                                      'data':{}, 'message':str(exc)[:200]} for c in calls]}}
         initial = self._resolve_blocked_birthdays(initial)
+        current = initial
+        mapped_revision = None
         results={}
         check_birth_cost = False
         for index, call in enumerate(calls):
@@ -241,13 +256,16 @@ class OriginalClientGame:
                 response={}
             elif service=='ClientAchievement/GetUserAchievements':
                 response={'result':[]}
-            elif service not in TUTORIAL_SERVICES|NORMAL_READ|ECONOMY_SERVICES|LEARNING_SERVICES|BUILDING_SERVICES|QUEST_SERVICES|USER_BUNDLE_SERVICES|PROGRESSION_SERVICES|WANT_SERVICES|DATING_SERVICES|MARRIAGE_SERVICES|FAMILY_SERVICES|BABY_CHARM_SERVICES|HABITAT_SERVICES|FUN_SERVICES|SKILL_SERVICES|{CHOOSE_SKILL, INTERACTIVE_SERVICE, COLLECT, 'ClientStartupService/ProcessOfflineConsumption', 'ClientUserService/ProgressArea', 'ClientUserService/UnlockArea', 'ClientVillagerService/MoveVillagers', 'ClientVillagerService/SetName', 'ClientTaskService/StartGatheringTask', 'ClientTaskService/StartCraftingTask', 'ClientTaskService/StartBuildingTask', 'ClientTaskService/StartFarmingTask', 'ClientTaskService/StartFishingTask', 'ClientTaskService/StartHuntingTask', 'ClientTaskService/HarvestTask', 'ClientTaskService/InstantCompleteTaskCurve', 'ClientVillager/Consume', 'ClientVillager/ReleaseXp'}:
+            elif service not in TUTORIAL_SERVICES|NORMAL_READ|ECONOMY_SERVICES|LEARNING_SERVICES|BUILDING_SERVICES|QUEST_SERVICES|USER_BUNDLE_SERVICES|PROGRESSION_SERVICES|WANT_SERVICES|DATING_SERVICES|MARRIAGE_SERVICES|FAMILY_SERVICES|BABY_CHARM_SERVICES|HABITAT_SERVICES|FUN_SERVICES|SKILL_SERVICES|{CHOOSE_SKILL, INTERACTIVE_SERVICE, COLLECT, RECRUIT, 'ClientStartupService/ProcessOfflineConsumption', 'ClientUserService/ProgressArea', 'ClientUserService/UnlockArea', 'ClientVillagerService/MoveVillagers', 'ClientVillagerService/SetName', 'ClientTaskService/StartGatheringTask', 'ClientTaskService/StartCraftingTask', 'ClientTaskService/StartBuildingTask', 'ClientTaskService/StartFarmingTask', 'ClientTaskService/StartFishingTask', 'ClientTaskService/StartHuntingTask', 'ClientTaskService/HarvestTask', 'ClientTaskService/InstantCompleteTaskCurve', 'ClientVillager/Consume', 'ClientVillager/ReleaseXp'}:
                 code=501;message='Original gameplay rule not implemented: '+service
             else:
                 try:
-                    snapshot=initial if index == 0 else self.repo.read_village(ident.village_id)
+                    snapshot=self.repo.refresh_snapshot(current)
+                    current = snapshot
                     world=(snapshot.payload.get('originalSave') or {}).get('normal')
-                    outward,inward=mappings(world,ident.player_id) if isinstance(world,dict) else ({},{})
+                    if mapped_revision != snapshot.revision:
+                        outward,inward=mappings(world,ident.player_id) if isinstance(world,dict) else ({},{})
+                        mapped_revision = snapshot.revision
                     canonical=translate(data,inward)
                     response=self._execute(ident,call,service,canonical,snapshot.payload.get('originalSave'),
                                            legacy_import=snapshot.format=='legacy.profile+tutorial.v1')
@@ -275,7 +293,7 @@ class OriginalClientGame:
             results[index] = {'id':str(call.get('id','')),'code':code,
                               'data':response,'message':message}
         now = int(time.time())
-        latest = self.repo.read_village(ident.village_id) if calls else initial
+        latest = self.repo.refresh_snapshot(current) if calls else initial
         state = (latest.payload.get('originalSave') or {}).get('normal')
         messages = []
         if check_birth_cost and isinstance(state, dict):
@@ -284,6 +302,12 @@ class OriginalClientGame:
             notices = self.life_stages.messages(state, ident.player_id, now)
             if state.get('npcMarriageRequests'):
                 notices.extend(self.marriage.messages(state, now, ident.player_id))
+            refresh = state.get('storageInventoryRefresh')
+            if (refresh and refresh['areaId'] == state['areaId']
+                    and any(call.get('service') != ACK_MESSAGE for call in calls)):
+                # ServerProcessMessages type 1 asks InventoryListener to fetch
+                # GetUserMaterialTypes. Keep it pending through its 60s throttle.
+                notices.append({'id': refresh['id'], 'messageTypeId': 1, 'data': {}})
             if notices:
                 outward, _ = mappings(state, ident.player_id)
                 messages = translate(notices, outward)
@@ -355,7 +379,10 @@ class OriginalClientGame:
     def _execute(self, ident, call, service:str, data:dict, save, *, legacy_import=False, pending=None)->dict:
         if not isinstance(save,dict):raise ValueError('Original tutorial not initialised; log in again')
         if service in NORMAL_READ and service!='ClientStartupService/GetAreaContent':
-            return self._normal_read(save,service,data,ident)
+            normal = save.get('normal') or {}
+            if (service != 'ClientMaterialService/GetUserMaterialTypes'
+                    or not normal.get('storageInventoryRefresh')):
+                return self._normal_read(save,service,data,ident)
         if service in {'ClientUserHashService/GetUserHash',
                        'ClientSettingService/GetUserGameSettings'}:
             result, changed=self.tutorial.run(save,service,data)
@@ -373,7 +400,10 @@ class OriginalClientGame:
             now=int(time.time())
             if normal:
                 normal['lastDailyActivityAt']=max(normal.get('lastDailyActivityAt',0),now)
-            if service=='ClientUserService/ProgressArea':
+            if service == 'ClientMaterialService/GetUserMaterialTypes':
+                result = self._normal_read(save, service, data, ident)
+                normal.pop('storageInventoryRefresh', None)
+            elif service=='ClientUserService/ProgressArea':
                 if save.get('normal'):
                     raise ValueError('Initial bridge transition already completed')
                 if save['userHash']['activeSequence']!=217:
@@ -454,7 +484,14 @@ class OriginalClientGame:
                 if not normal:raise ValueError('Normal world required')
                 self.buildings.reconcile_boulder_foundation(normal)
                 self.quests.reconcile_travel(normal, now)
+                previous_area = normal['areaId']
                 result=self.areas.view(normal,data.get('areaId'),now)
+                if normal['areaId'] != previous_area:
+                    message = 'local-storage-refresh-' + uuid.uuid4().hex
+                    normal['storageInventoryRefresh'] = {'id': message, 'areaId': normal['areaId']}
+                    normal['storageInventoryMessages'] = [
+                        *normal.get('storageInventoryMessages', [])[-7:], message]
+                result['inventory'] = self.materials.list_items(normal)
                 save.setdefault('gameSettings', {})['lastViewedArea'] = str(normal['areaId'])
                 self.wants.daily.project_energy(result['areaJson']['entities'],now)
             elif service in self.work.TYPES:
@@ -494,9 +531,10 @@ class OriginalClientGame:
                         rng=save['rng']=new_state()
                     result=self.economy.daily_spin(normal,data,now,operation_key,
                                                    rng)
-            elif service == COLLECT:
-                if not normal:raise ValueError('Normal world required for collection acknowledgement')
-                result=collect_villager(normal,data)
+            elif service in {COLLECT, RECRUIT}:
+                if not normal:raise ValueError('Normal world required for the villager collection')
+                result = (collect_villager(normal, data) if service == COLLECT else
+                          self.baby_charms.recruit_from_collection(normal, data, now, ident.player_id))
             elif service in BUILDING_SERVICES:
                 normal=save.get('normal')
                 if not normal:raise ValueError('Normal world required')
@@ -537,8 +575,14 @@ class OriginalClientGame:
             elif service in QUEST_SERVICES:
                 normal=save.get('normal')
                 if not normal:raise ValueError('Normal world required for quest operations')
-                handler=self.quests.add if service.endswith('AddQuest') else self.quests.complete
-                result=handler(normal,data,int(time.time()))
+                if service == RETIRE:
+                    result = self.retirement.finish(normal, data, now, ident.player_id)
+                elif service.endswith('AddQuest') and data.get('questTypeId') == FAREWELL_QUEST:
+                    result = self.retirement.begin(normal, data, now)
+                elif service.endswith('AddQuest'):
+                    result = self.quests.add(normal, data, now)
+                else:
+                    result = self.quests.complete(normal, data, now)
             elif service in FAMILY_SERVICES | BABY_CHARM_SERVICES:
                 if not normal:
                     raise ValueError('Normal world required for family operations')
@@ -559,6 +603,12 @@ class OriginalClientGame:
                 else:
                     remaining = (self.life_stages.acknowledge(normal, service, data, ident.player_id, now)
                                  if service in {ACK_MESSAGE, ACK_NOTICE} else data)
+                    if service == ACK_MESSAGE and remaining is not None:
+                        value = remaining.get('userMessageIds')
+                        if isinstance(value, str) and value:
+                            other = [message.strip() for message in value.split(',')
+                                     if message.strip() not in normal.get('storageInventoryMessages', [])]
+                            remaining = {**remaining, 'userMessageIds': ','.join(other)} if other else None
                     result = (self.marriage.operate(normal, service, remaining, now, ident.player_id)
                               if remaining is not None else {})
             elif service in WANT_SERVICES:

@@ -4,6 +4,8 @@ Scenario-authored shelter scenery is not a player home. Only homes created by
 construction receive generated beds; authored bed arrays remain authoritative.
 """
 from __future__ import annotations
+from villagelife.persistence.history import active_work
+from .indexes import find_entity
 
 import copy
 import hashlib
@@ -151,8 +153,7 @@ class OriginalHabitatRules:
     def entity(self, state: dict, ident, kind: str) -> dict:
         if not isinstance(ident, str) or not ident:
             raise ValueError('Object identifier required')
-        found = next((value for value in state['world']['entities']
-                      if value.get('id') == ident and value.get('templateType') == kind), None)
+        found = find_entity(state, ident, kind)
         if found is None:
             raise ValueError('Unknown ' + kind + ' in this village')
         if self.world._area(found) != state['areaId']:
@@ -203,7 +204,7 @@ class OriginalHabitatRules:
         if fire.get('isBurning') and at < fire.get('endsAt', 0):
             return self._fire_response(state, fire), False
         if any(job.get('villagerId') == person['id'] and job.get('status') == 'working'
-               and at < job.get('completionTime', 0) for job in state.get('workAreas', {}).values()):
+               and at < job.get('completionTime', 0) for job in active_work(state)):
             raise ValueError('Villager is working')
         if any(entity.get('lightingVillagerId') == person['id']
                and at < entity.get('lightingCompleteAt', 0)

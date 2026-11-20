@@ -2,22 +2,34 @@
 #ifndef StageDir
   #error Supply /DStageDir= when compiling
 #endif
+
+#ifdef PrivateCandidate
+  #define AppIdentity "VillageLifeAuditPrivate"
+  #define AppLabel "Village Life Private Audit Candidate"
+  #define AppFolder "VillageLifeAuditPrivate"
+  #define InstallerName "VillageLife-Private-Audit-Setup"
+#else
+  #define AppIdentity "VillageLifeCommunityTest"
+  #define AppLabel "Village Life Community Test"
+  #define AppFolder "VillageLifeCommunityTest"
+  #define InstallerName "VillageLife-Community-0.3.6-Setup"
+#endif
 #ifndef OutputDir
   #error Supply /DOutputDir= when compiling
 #endif
 
 [Setup]
 SetupIconFile=..\launcher\VillageLife.ico
-AppId=VillageLifeCommunityTest
-AppName=Village Life Community Test
+AppId={#AppIdentity}
+AppName={#AppLabel}
 AppVersion=0.3.6
 AppPublisher=Village Life Community Project
-DefaultDirName={localappdata}\Programs\VillageLifeCommunityTest
-DefaultGroupName=Village Life Community Test
+DefaultDirName={localappdata}\Programs\{#AppFolder}
+DefaultGroupName={#AppLabel}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir={#OutputDir}
-OutputBaseFilename=VillageLife-Community-0.3.6-Setup
+OutputBaseFilename={#InstallerName}
 VersionInfoVersion=0.3.6
 Compression=lzma2
 SolidCompression=yes
@@ -25,13 +37,14 @@ WizardStyle=modern
 InfoBeforeFile={#StageDir}\START-HERE.txt
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-CloseApplications=no
+CloseApplications=yes
+AppMutex=Local\VillageLifeLauncherActive
 
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Village Life Community Test"; Filename: "{app}\StartVillageLife\VillageLifeLauncher.exe"; WorkingDir: "{app}"
+Name: "{autoprograms}\{#AppLabel}"; Filename: "{app}\StartVillageLife\VillageLifeLauncher.exe"; WorkingDir: "{app}"
 
 [Run]
 Filename: "{app}\StartVillageLife\VillageLifeLauncher.exe"; Description: "Open Village Life Community Test"; Flags: postinstall nowait skipifsilent

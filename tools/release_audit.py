@@ -31,7 +31,9 @@ paths = subprocess.check_output(['git', 'ls-files', '-z', '--cached', '--others'
                                  '--exclude-standard'], cwd=ROOT)
 for path in set(paths.split(b'\0')) - {b''}:
     file = ROOT / path.decode('utf-8', 'replace')
-    if file.is_file() and file.suffix.lower() in {'.apk','.xapk','.obb','.pfx','.p12','.sqlite','.sqlite3','.db'}:
+    if file.is_file() and (file.suffix.lower() in {'.apk','.xapk','.obb','.pfx','.p12','.sqlite','.sqlite3','.db'}
+                          or file.name in {'transport-key.txt','private-password.txt','bluestacks-binding.json',
+                                           'launcher-settings.json','prepared-client.json'}):
         errors.append('Prohibited file: '+str(file.relative_to(ROOT)))
 if errors:
     print('\n'.join(errors));sys.exit(2)

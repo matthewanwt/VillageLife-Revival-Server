@@ -4,7 +4,7 @@ using System.Windows.Forms;
 namespace VillageLife;
 
 public sealed partial class VillageLifeWindow {
-    readonly System.Windows.Forms.Timer gameMonitor=new() { Interval=5000 };
+    readonly System.Windows.Forms.Timer gameMonitor=new() { Interval=15000 };
     Process? monitoredBackend;
     bool checkingGame;
     int absentChecks;

@@ -1,6 +1,7 @@
 import unittest
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 from test_original_client import fake_tables
 from villagelife.protocol.original_client.catalog import OriginalDefinitions
@@ -39,3 +40,25 @@ class OriginalEconomyTests(unittest.TestCase):
         self.rules.buy_store_item(self.state, {'storeItemId': 1, 'multiples': 2}, 'store')
         self.assertEqual(self.state['inventory']['323'], 10.0)
         self.assertEqual(self.state['inventory']['11'], 9.0)
+
+    def test_imported_daily_wheel_keeps_eligible_streak_and_expires_after_a_day(self):
+        self.state['user'].update(NextDailySpinAt=100, NextDailySpinIncrement=7)
+        increments = [{'Increment': '7', 'WofSet': '7', 'Multiplier': '2.5'},
+                      {'Increment': '1', 'WofSet': '2', 'Multiplier': '1'}]
+        prize = {'ResultIndex': 2, 'MaterialTypes': [{'MaterialTypeId': 323, 'Amount': 5}]}
+        request = {'WheelOfFortuneTypeID': 1}
+        with (patch.object(self.rules.defs, 'rows', return_value=increments),
+              patch.object(self.rules, '_draw_wheel', return_value=prize) as draw):
+            with self.assertRaisesRegex(ValueError, 'not ready'):
+                self.rules.daily_spin(self.state, request, 99, 'too-early', {})
+            draw.assert_not_called()
+            result = self.rules.daily_spin(self.state, request, 100, 'ready', {})
+            draw.assert_called_once_with(7, '2.5', {})
+            self.assertEqual(self.rules.daily_spin(self.state, request, 101, 'ready', {}), result)
+            self.assertEqual(self.state['inventory']['323'], 25)
+            self.assertEqual(self.state['user']['NextDailySpinIncrement'], 1)
+
+            abandoned = {'revision': 1, 'inventory': {'323': 20},
+                         'user': {'NextDailySpinAt': 100, 'NextDailySpinIncrement': 7}}
+            self.rules.daily_spin(abandoned, request, 86500, 'late', {})
+            draw.assert_called_with(2, '1', {})

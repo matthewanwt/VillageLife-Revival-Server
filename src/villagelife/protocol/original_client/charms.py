@@ -1,4 +1,4 @@
-"""Original free and paid baby charms, persisted before the reveal."""
+"""Original baby charms, villager charms and collection-book recruitment."""
 from __future__ import annotations
 
 import copy
@@ -14,6 +14,7 @@ from .relationships import actor, add_relation, touch
 
 PURCHASE = 'ClientFortune/Gacha'
 CONSUME = 'ClientFortune/ConsumeGacha'
+RECRUIT = 'ClientVillagerService/CreateGachaVillager'
 SERVICES = {PURCHASE, CONSUME}
 
 
@@ -144,6 +145,31 @@ class OriginalBabyCharmRules:
                 preview.update(VillagerId=int(registry[person['id']]), BornAt=person['bornAt'])
         touch(state, at)
         return {'result': results}
+
+    def recruit_from_collection(self, state, data, at, owner):
+        raw = data.get('GachaVillagerId')
+        if not isinstance(raw, (str, int)) or not str(raw).isdecimal():
+            raise ValueError('Original collection villager identifier required')
+        seed = self.defs.item('gachaVillager', int(raw))
+        group = next((row for row in self.defs.rows('Collection_Set_Item')
+                      if seed['id'] in row['GachaVillagerArray'].split(',')), None)
+        if group is None or seed['star'] not in {'3', '4', '5', '6'}:
+            raise ValueError('This villager is not offered in the collection book')
+        limited = self.defs.item('Collection_Set', group['CollectionSet'])['IsLimitedEdition'] == '1'
+        price_key = seed['star'] + ('StarLimitedEd' if limited else 'Star') + 'VillagerGemCost'
+        cost = int(self.family.world.global_value(price_key))
+        quoted = data.get('GemCost')
+        if type(quoted) is not int or quoted != cost:
+            raise ValueError('Villager price differs from the collection book price')
+        if self.family.places(state) < 1:
+            raise ValueError('Village population capacity reached')
+        spend_gems(state, cost)
+        person = self._award_villager(state, int(seed['id']), at)
+        registry = reserve_ids(state, owner, [])
+        touch(state, at)
+        return {'inventory': self.family.inventory.list_items(state),
+                'villager': [{'id': int(registry[person['id']]), 'bornAt': person['bornAt'],
+                              'villagerBaseID': int(seed['id'])}]}
 
     def operate(self, state, service, data, at, owner, rng):
         target = data.get('VillagerStringId')

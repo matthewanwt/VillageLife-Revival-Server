@@ -9,6 +9,7 @@ from .daily import satisfy_wants
 from .native_ids import mappings
 from .randomness import randbelow
 from .world import OriginalWorldRules
+from .indexes import find_entity
 
 SERVICES = {
     'ClientVillager/GetCommunityVillagers', 'ClientVillagerService/OptIntoCommunity',
@@ -26,9 +27,9 @@ def actors(state):
 
 
 def actor(state, ident):
-    for person in actors(state):
-        if person['id'] == ident:
-            return person
+    person = find_entity(state, ident, 'villager_type')
+    if person is not None:
+        return person
     raise ValueError('Unknown villager in this village')
 
 

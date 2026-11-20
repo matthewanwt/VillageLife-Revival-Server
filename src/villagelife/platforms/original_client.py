@@ -80,11 +80,19 @@ def _obb_matches(binding: Path, remote: str, size: int) -> bool:
     return result.returncode == 0 and result.stdout.strip() == str(size).encode('ascii')
 
 
-def prepared_installation_ready(binding: Path, obb: Path | None = None) -> bool:
+def _obb_digest_matches(binding: Path, remote: str, obb: Path) -> bool:
+    result = _adb(binding, ['shell', f'sha256sum {shlex.quote(remote)}'], timeout=180)
+    with obb.open('rb') as source:
+        expected = file_digest(source, 'sha256').hexdigest().encode('ascii')
+    return result.returncode == 0 and result.stdout.split()[:1] == [expected]
+
+
+def prepared_installation_ready(binding: Path, obb: Path | None = None, *, verify_hash=False) -> bool:
     if not existing_installation(binding):
         return False
     size = obb.stat().st_size if obb is not None else 452933712
-    return size > 0 and _obb_matches(binding, f'{OBB_DIR}/{OBB_NAME}', size)
+    return (size > 0 and _obb_matches(binding, f'{OBB_DIR}/{OBB_NAME}', size)
+            and (not verify_hash or (obb is not None and _obb_digest_matches(binding, f'{OBB_DIR}/{OBB_NAME}', obb))))
 
 
 def install_prepared(binding: Path, apk: Path, obb: Path, *, replace: bool = False) -> None:
@@ -133,7 +141,7 @@ def repair_prepared_obb(binding: Path, apk: Path, obb: Path) -> None:
 def _install_obb(binding: Path, obb: Path) -> None:
     size = obb.stat().st_size
     destination = f'{OBB_DIR}/{OBB_NAME}'
-    if _obb_matches(binding, destination, size):
+    if _obb_matches(binding, destination, size) and _obb_digest_matches(binding, destination, obb):
         return
     pending = destination + '.vl-part'
 
@@ -147,13 +155,13 @@ def _install_obb(binding: Path, obb: Path) -> None:
             raise bluestacks.InstanceError('VL-OBB-INSTALL-FAILED',
                 f'{label}: {detail or f"ADB exit code {result.returncode}"}. Click Play to retry.')
 
-    if not _obb_matches(binding, pending, size):
+    if not _obb_matches(binding, pending, size) or not _obb_digest_matches(binding, pending, obb):
         transfer_step('Create expansion folder', ['shell', 'mkdir', '-p', OBB_DIR])
         transfer_step('Transfer expansion file', ['push', str(obb), pending], timeout=300)
-        if not _obb_matches(binding, pending, size):
+        if not _obb_matches(binding, pending, size) or not _obb_digest_matches(binding, pending, obb):
             raise bluestacks.InstanceError('VL-OBB-INSTALL-FAILED', 'The transferred expansion is incomplete. Click Play to retry.')
     transfer_step('Activate expansion file', ['shell', 'mv', '-f', pending, destination])
-    if not _obb_matches(binding, destination, size):
+    if not _obb_matches(binding, destination, size) or not _obb_digest_matches(binding, destination, obb):
         raise bluestacks.InstanceError('VL-OBB-INSTALL-FAILED', 'Android did not confirm the final expansion file.')
 
 
@@ -214,6 +222,11 @@ def guest_network_evidence(binding: Path) -> dict[str, str]:
 
 def game_status(binding: Path) -> str:
     """Distinguish an exited Android activity from an unsuccessful query."""
+    fast = _adb(binding, ['shell', 'pidof', PACKAGE], timeout=5)
+    if fast.returncode == 0 and fast.stdout.strip().replace(b' ', b'').isdigit():
+        return 'running'
+    if fast.returncode == 1 and not fast.stdout.strip():
+        return 'closed'
     result = _adb(binding, ['shell', 'dumpsys', 'activity', 'activities'], timeout=8)
     if result.returncode or b'ACTIVITY MANAGER ACTIVITIES' not in result.stdout:
         # Some HD-Adb versions return success from connect even with no guest.

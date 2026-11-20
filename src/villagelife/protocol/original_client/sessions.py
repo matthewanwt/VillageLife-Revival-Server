@@ -93,6 +93,9 @@ class OriginalClientSessions:
                     raise PermissionError('The explicitly selected village is open in another game instance')
                 ident = ClientIdentity(row['account_id'], row['village_id'], row['numeric_player_id'],
                                        secrets.token_hex(16))
+                if self.selected_session is not None:
+                    with self.repo.transaction() as db:
+                        self._retire_rpc_receipts(db, self.selected_session[1])
                 self.selected_session = (key, ident)
             stored = self.repo.read_village(ident.village_id).payload
             return ident, self.saved_profile(ident, device, stored), stored
@@ -107,6 +110,12 @@ class OriginalClientSessions:
                 token=secrets.token_hex(16)
                 db.execute('UPDATE original_client_devices SET session_token=?, updated_at=? WHERE device_hash=?',
                            (token,now,key))
+                # This exact token is now invalid for authentication. Its RPC
+                # response bodies are dead data. Keep the digest tombstones:
+                # a request authenticated just before rotation may still be in
+                # flight, and must never grant its reward twice.
+                self._retire_rpc_receipts(db, ClientIdentity(row['account_id'], row['village_id'],
+                                                           row['numeric_player_id'], row['session_token']))
                 ident=ClientIdentity(row['account_id'],row['village_id'],row['numeric_player_id'],token)
             else:
                 slot = db.execute("SELECT value FROM metadata WHERE key='legacy_launch_copy'").fetchone()
@@ -147,6 +156,13 @@ class OriginalClientSessions:
             stored=json.loads(db.execute('SELECT payload_json FROM villages WHERE village_id=?',(ident.village_id,)).fetchone()[0])
         return ident, self.saved_profile(ident, device, stored), stored
 
+    @staticmethod
+    def _retire_rpc_receipts(db, identity):
+        prefix = 'original:' + identity.session_token + ':'
+        db.execute("UPDATE receipts SET response_json='{}' WHERE village_id=? "
+                   'AND operation_key>=? AND operation_key<?',
+                   (identity.village_id, prefix, prefix[:-1] + ';'))
+
     def saved_profile(self, ident, device, stored):
         normal = (stored.get('originalSave') or {}).get('normal')
         profile = self.profile(ident, device, stored.get('originalProfile'), bool(normal))
@@ -172,3 +188,12 @@ class OriginalClientSessions:
                 or str(row['numeric_player_id'])!=str(request.get('pId',''))):
             raise PermissionError('Original-client session mismatch')
         return ClientIdentity(row['account_id'],row['village_id'],row['numeric_player_id'],row['session_token'])
+
+    def identity_is_current(self, identity):
+        if self.selected_owner is not None:
+            with self.selection_lock:
+                return self.selected_session is not None and self.selected_session[1] == identity
+        with self.repo.connect() as db:
+            row = db.execute('SELECT session_token FROM original_client_devices WHERE village_id=? '
+                             'AND numeric_player_id=?', (identity.village_id, identity.player_id)).fetchone()
+        return row is not None and secrets.compare_digest(row[0], identity.session_token)

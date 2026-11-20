@@ -39,6 +39,7 @@ experiments/
 *.jsonl
 *.vl-save.zip
 *.vlbackup
+**/transport-key.txt
 secrets/
 credentials*.json
 *token*.secret

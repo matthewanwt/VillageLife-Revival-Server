@@ -11,22 +11,15 @@ from villagelife.core.errors import InvalidAction
 from villagelife.core.validation import validate_json_tree
 from .legacy_import import LegacySaveImporter, PROFILE_PATTERN, digest
 from .sqlite_store import SqliteSaveRepository
+from villagelife.core.limits import MAX_SAVE_BYTES, MAX_PROFILE_BYTES, bounded_read
 
 # Active 0.2.6 villages retain gameplay history in the save JSON.
-MAX_SAVE_BYTES = 128 * 1024 * 1024
-MAX_PROFILE_BYTES = 1024 * 1024
 SLOT_KEY = re.compile(r'[0-9a-f]{64}')
 INSTANCE_ID = re.compile(r'Pie64(?:_\d+)?')
 
 
 def _read(path: Path, *, limit: int = MAX_PROFILE_BYTES) -> bytes:
-    if path.is_symlink():
-        raise ValueError('Symbolic links are unsupported for legacy save files.')
-    with path.open('rb') as stream:
-        data = stream.read(limit + 1)
-    if len(data) > limit:
-        raise ValueError(f'File exceeds the {limit // (1024 * 1024)} MiB import limit.')
-    return data
+    return bounded_read(path, limit)
 
 
 def _legacy_folder(folder: Path) -> tuple[Path, str]:

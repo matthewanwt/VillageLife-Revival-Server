@@ -2,6 +2,7 @@ import copy
 import unittest
 
 from villagelife.protocol.original_client.habitats import OriginalHabitatRules
+from villagelife.protocol.original_client.retirement import OriginalRetirementRules
 from villagelife.protocol.original_client.wants import OriginalWantRules
 
 
@@ -38,6 +39,10 @@ class Definitions:
                 {'id':'487'}, {'id':'231'},
             ],
             'user_level': [{'levelNumber':'3','villagerXPCapacity':'28'}],
+            'TimedEvent': [
+                {'id':'1','area':'1','Duration':'100','questObjectId':'1960','taskId':'1101'},
+                {'id':'7','area':'2'},
+            ],
         }.get(table, [])
 
     def item(self, table, ident):
@@ -58,6 +63,51 @@ class DailyLifeTests(unittest.TestCase):
 
     def generate(self, name, at=1000):
         return self.rules.generate(self.state, f'ClientWant/Generate{name}Wants', at)['result']
+
+    def test_retirement_response_contains_active_local_schedule_and_wish(self):
+        food = self.generate('Food')
+        self.adult.update(retireEventID=1, retireAt=1060)
+        self.baby.update(retireEventID=7, retireAt=1060)
+
+        result = self.generate('Retirement')
+        self.assertEqual(result['RetireVillagers'], [
+            {'VillagerID':'caregiver','RetireAt':1060,'RetireEventID':1},
+        ])
+        want, = result['RetireWantModels']
+        self.assertEqual(want['VillagerStringID'], 'caregiver')
+        self.assertEqual(want['MaterialID'], 1966)
+        self.assertEqual(self.generate('Retirement', 1059), result)
+        self.assertEqual(self.generate('Retirement', 1060),
+                         {'RetireVillagers': [], 'RetireWantModels': []})
+        self.assertEqual(self.state['wants'], food)
+        self.assertEqual(len(self.state['world']['entities']), 2)
+
+    def test_farewell_turn_in_frees_bed_and_cannot_be_repeated(self):
+        self.adult.update(retireEventID=1, retireAt=1100, shelterBedId='bed')
+        bed = {'id':'bed','villagerId':'caregiver'}
+        self.state['world']['entities'].append({'id':'home','beds':[bed]})
+        self.generate('Retirement')
+        retirement = OriginalRetirementRules(self.defs)
+        request = {'questTypeId':23,'objectId':'1','amount':0,'villagerId':''}
+        quest = retirement.begin(self.state, request, 1000)['userQuest']
+        self.assertEqual(retirement.begin(self.state, request, 1001)['userQuest'], quest)
+        with self.assertRaisesRegex(ValueError, 'collect the Farewell gift'):
+            retirement.finish(self.state, {}, 1002, '123')
+        self.state['workAreas'] = {'hamper': {'taskTypeId':1101,'status':'harvested',
+                                            'createdAt':1001,'position':{'areaId':1}}}
+        self.state['inventory']['1960'] = 1
+        result = retirement.finish(self.state, {}, 1003, '123')['result']
+        self.assertEqual(result['RetireVillagerIDs'], ['caregiver'])
+        self.assertEqual(result['RemovedUserQuestIDs'], [quest['id']])
+        self.assertEqual(result['RemovedMaterialIDs'], [1960])
+        self.assertEqual(result['EmptiedShelterIDs'], ['home'])
+        self.assertEqual(self.state['retiredVillagers']['caregiver']['retiredAt'], 1003)
+        self.assertEqual(bed['villagerId'], '')
+        self.assertEqual(self.state['quests'], [])
+        self.assertEqual(self.generate('Retirement', 1004)['RetireWantModels'], [])
+        self.assertNotIn(self.adult, self.state['world']['entities'])
+        self.assertFalse(any(retirement.finish(self.state, {}, 1005, '123')['result'].values()))
+        self.assertEqual(self.state['inventory']['1960'], 0)
 
     def test_food_varies_after_fulfilment_and_four_year_old_has_no_shelter_wish(self):
         from villagelife.protocol.original_client.daily import satisfy_wants

@@ -310,6 +310,42 @@ class OriginalClientHttpTests(unittest.TestCase):
         self.assertEqual(first['activeSequence'],217)
         self.assertEqual(first['data']['villagers'][0]['name'],'Example')
 
+    def test_storage_refresh_survives_message_ack_until_inventory_is_fetched(self):
+        profile = self.login('storage-refresh')
+        identity = self.server.original.sessions.authenticate(profile)
+        message = 'local-storage-refresh-test'
+
+        def prepare(payload):
+            payload['originalSave']['normal'] = {
+                'areaId':1,'world':{'entities':[]},'user':{'maxAreaId':0},
+                'inventory':{'323':10},'storageInventoryMessages':[message],
+                'storageInventoryRefresh':{'id':message,'areaId':1},
+            }
+            return {}
+
+        self.repo.mutate(identity.village_id, operation_key='fixture:refresh',
+                         request={}, change=prepare)
+        session = {key:profile[key] for key in ('deviceId','sessionId','pId')}
+        request = {**session, 'data':{'calls':[{
+            'id':'settings','service':'ClientSettingService/GetUserGameSettings','data':{},
+        }]}}
+        refresh = {'id':message,'messageTypeId':1,'data':{}}
+        self.assertIn(refresh, self.post('/web/ClientService/Process', request)['messages'])
+        acknowledgement = self.post('/web/ClientService/Process', {
+            **session, 'data':{'calls':[{'id':'ack-refresh',
+                'service':'ClientUserService/HandleUserMessages',
+                'data':{'userMessageIds':message}}]},
+        })
+        acknowledged, = acknowledgement['data']['calls']
+        self.assertEqual(acknowledged['code'], 200, acknowledged)
+        self.assertNotIn(refresh, acknowledgement['messages'])
+        self.assertIn(refresh, self.post('/web/ClientService/Process', request)['messages'])
+        inventory = self.call(profile, 'ClientMaterialService/GetUserMaterialTypes', {}, 'fetch-refresh')
+        self.assertEqual(inventory['code'], 200, inventory)
+        self.assertNotIn(refresh, self.post('/web/ClientService/Process', request)['messages'])
+        foreign = self.call(profile, 'ClientUserService/HandleUserMessages',
+                            {'userMessageIds':'local-storage-refresh-foreign'}, 'foreign-ack')
+        self.assertEqual(foreign['code'], 403, foreign)
     def test_explicit_village_opens_on_replacement_device_without_reassigning_saves(self):
         from villagelife.protocol.original_client.sessions import OriginalClientSessions
 
@@ -571,6 +607,7 @@ class OriginalClientHttpTests(unittest.TestCase):
             'material_type':[{'id':'323'}],
             'villager_skill':[{'id':'2'},{'id':'3'},{'id':'7'}],
             'building_task':[],
+            'building_type':[],
             'requirement_set_item':[],
         }
         globals_ = {'gemCurveVariablePregnancySkipTime'+k:str(v)

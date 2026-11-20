@@ -92,6 +92,9 @@ class OriginalInventoryRules:
         found: set[str] = set()
         ancestors = self._building_ancestors()
         for entity in state.get('world', {}).get('entities', []):
+            if (entity.get('templateType') == 'container_type'
+                    and entity.get('position', {}).get('areaId') != state.get('areaId')):
+                continue
             if entity.get('localCreated') or entity.get('sourceWorkAreaId'):
                 found.update(ancestors.get((entity.get('templateType'), entity.get('templateId')), ()))
         maximum = int(state.get('user', {}).get('maxAreaId', state.get('areaId', 0)))
@@ -101,9 +104,27 @@ class OriginalInventoryRules:
             found.add('130')
         return found
 
+    @cached_property
+    def storage_materials(self) -> frozenset[str]:
+        return frozenset(str(row['materialType']) for row in self.defs.rows('building_type')
+                         if row.get('entityRef') == 'container_type')
+
+    def storage_quantities(self, state: dict) -> dict[str, int]:
+        quantities = {material: 0 for material in self.storage_materials}
+        ancestors = self._building_ancestors()
+        for entity in state.get('world', {}).get('entities', []):
+            if (entity.get('templateType') != 'container_type'
+                    or entity.get('position', {}).get('areaId') != state.get('areaId')):
+                continue
+            for material in ancestors.get(('container_type', entity.get('templateId')), ()):
+                quantities[material] = quantities.get(material, 0) + 1
+        return quantities
+
     def requirement_quantity(self, state: dict, material: str, milestones: set[str]) -> Decimal:
         if material == '7':
             return Decimal(str(state.get('user', {}).get('xp', 0)))
+        if material in self.storage_materials:
+            return Decimal(self.storage_quantities(state).get(material, 0))
         return max(Decimal(str(state.get('inventory', {}).get(material, 0))),
                    Decimal(int(material in milestones)))
 
@@ -120,7 +141,9 @@ class OriginalInventoryRules:
         inventory = state.get('inventory', {})
         learning = state.get('materialLearning', {})
         milestones = self.milestones(state)
-        keys = set(inventory) | set(learning) | milestones
+        storage = self.storage_quantities(state)
+        # Explicit zeros clear the previous area's storage markers in the client.
+        keys = set(inventory) | set(learning) | milestones | set(storage)
         result = []
         for raw in sorted(keys, key=int):
             ident = int(raw)
@@ -128,7 +151,8 @@ class OriginalInventoryRules:
             record = learning.get(str(raw))
             is_unlocked = self.is_unlocked(state, raw, definition, milestones)
             result.append({'materialTypeId': ident,
-                           'amount': max(inventory.get(str(raw), 0), int(str(raw) in milestones)),
+                           'amount': (storage[str(raw)] if str(raw) in storage else
+                                      max(inventory.get(str(raw), 0), int(str(raw) in milestones))),
                            'isUnlocked': bool(is_unlocked),
                            'learningStartedAt': record.get('startedAt', 0) if record else 0})
         return result

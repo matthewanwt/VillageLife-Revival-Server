@@ -47,6 +47,10 @@ public sealed partial class VillageLifeWindow {
         using var timer=new System.Windows.Forms.Timer { Interval=2500 };
         Task pending=Task.CompletedTask;
         bool acting=false;
+        using var step=new CancellationTokenSource();
+        var previousStep=setupStep;
+        setupStep=step;
+        guide.FormClosing+=(_,_)=>{if(guide.DialogResult!=DialogResult.OK)step.Cancel();};
 
         async Task Check() {
             try {
@@ -75,10 +79,14 @@ public sealed partial class VillageLifeWindow {
             guide.Location=new Point(Math.Max(area.Left,area.Right-guide.Width-24),area.Top+36);
             timer.Start();
         };
-        var result=guide.ShowDialog(this);
-        timer.Stop();
-        await pending;
-        if (result!=DialogResult.OK) throw new OperationCanceledException();
+        try {
+            var result=guide.ShowDialog(this);
+            timer.Stop();
+            await pending;
+            if (result!=DialogResult.OK) throw new OperationCanceledException();
+        } finally {
+            setupStep=previousStep;
+        }
     }
 
     async Task EnsureBlueStacks() {
@@ -198,18 +206,31 @@ public sealed partial class VillageLifeWindow {
     }
 
     async Task<bool> GameInstalled(params string[] options) {
-        using var status=JsonDocument.Parse(await ReadTool(60,["check-original-game",..options]));
+        using var status=JsonDocument.Parse(await ReadTool(options.Contains("--verify-hash") ? 240 : 90,["check-original-game",..options]));
         return status.RootElement.GetProperty("installed").GetBoolean();
     }
 
     async Task<Settings> EnsureGame(Settings settings) {
         SetStage(44,"Checking the game and expansion file in BlueStacks…");
-        if (Ready(settings) && await GameInstalled("--prepared","--obb",settings.Obb!)) return settings;
-        RequireStopped();
-        if (!File.Exists(settings.Xapk)) ChooseGameArchive(settings);
         var privateClient=Path.Combine(state,"private-client");
         var apk=Path.Combine(privateClient,"client-local-signed.apk");
-        if ((!settings.ClientPrepared && !settings.PreparedFilesReady) || !File.Exists(apk) || !PreparedAssetsExist(settings)) {
+        var capability=Path.Combine(privateClient,"transport-key.txt");
+        var preparation=Path.Combine(privateClient,"prepared-client.json");
+        bool identityReady=PreparedIdentityReady(capability,preparation);
+        var binding=Path.Combine(state,"bluestacks-binding.json");
+        string expansionKey=File.Exists(settings.Obb) && File.Exists(binding)
+            ? settings.Obb+File.GetLastWriteTimeUtc(settings.Obb).Ticks+File.ReadAllText(binding) : "";
+        if (Ready(settings) && identityReady && File.Exists(apk)
+                && await GameInstalled("--apk",apk)
+                && await GameInstalled(verifiedExpansion==expansionKey
+                    ? ["--prepared","--obb",settings.Obb!]
+                    : ["--prepared","--obb",settings.Obb!,"--verify-hash"])) {
+            verifiedExpansion=expansionKey;
+            return settings;
+        }
+        RequireStopped();
+        if (!File.Exists(settings.Xapk)) ChooseGameArchive(settings);
+        if ((!settings.ClientPrepared && !settings.PreparedFilesReady) || !identityReady || !File.Exists(apk) || !PreparedAssetsExist(settings)) {
             SetStage(49,"Preparing the bundled game files. This can take a few minutes…");
             await ToolQuiet("prepare-original-client","--xapk",settings.Xapk,"--output",privateClient,
                             "--java-home",SigningJdkHome,"--prepare-data");
@@ -241,6 +262,16 @@ public sealed partial class VillageLifeWindow {
     static bool PreparedAssetsExist(Settings settings) =>
         File.Exists(settings.GameTables) && File.Exists(settings.Inventory) && File.Exists(settings.Obb);
 
+    static bool PreparedIdentityReady(string capability,string receipt) {
+        try {
+            var key=File.ReadAllText(capability).Trim();
+            if(key.Length!=12 || key.Any(c=>!char.IsAsciiLetterOrDigit(c)&&c!='-'&&c!='_'))return false;
+            using var json=JsonDocument.Parse(File.ReadAllText(receipt));
+            var hash=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(key))).ToLowerInvariant();
+            return json.RootElement.GetProperty("version").GetInt32()==1 && json.RootElement.GetProperty("transport_key_sha256").GetString()==hash;
+        } catch(Exception e) when(e is IOException or UnauthorizedAccessException or JsonException or KeyNotFoundException or InvalidOperationException) {return false;}
+    }
+
     async Task Setup() {
         RequireStopped();
         await GuidedPlay(chooseAgain:true);
@@ -249,12 +280,16 @@ public sealed partial class VillageLifeWindow {
     Task Play()=>GuidedPlay(chooseAgain:false);
 
     async Task GuidedPlay(bool chooseAgain) {
+        BeginChecklist();
         await OfferVillageChoice();
+        ChecklistStep(1);
         SetStage(8,"Checking your dedicated BlueStacks instance…");
         await EnsureInstance(chooseAgain);
         await EnsureAndroid();
+        ChecklistStep(2);
         await BackupBeforeUpdate();
         var settings=await EnsureGame(Read());
+        ChecklistStep(3);
         StopGameMonitoring();
         try {
             await ToolQuietWithin(40,"stop-original-game");
@@ -289,6 +324,7 @@ public sealed partial class VillageLifeWindow {
             SetStage(100,"Village Life connected. Play in the BlueStacks window.");
             Log("Village Life signed in to the local server.");
             StartGameMonitoring(backend!);
+            ChecklistStep(4);
         } catch {
             if (backend is {HasExited:false}) await Stop();
             throw;

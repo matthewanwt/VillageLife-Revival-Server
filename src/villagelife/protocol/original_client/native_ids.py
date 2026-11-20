@@ -12,14 +12,15 @@ IDENTITY_KEYS={
     'requesterVillagerId','supplierVillagerId','id','ID','villagerId','VillagerStringID',
     'VillagerStringId','relativeVillagerId','partnerVillagerId','senderVillagerId',
     'recipientVillagerId','motherId','fatherId','neighborVillagerId','FriendCharacterId',
-    'FriendCharacterID','CharacterID','villagerIds','VillagerIDs','CharacterIds',
+    'FriendCharacterID','CharacterID','villagerIds','VillagerIDs','CharacterIds','RetireVillagerIDs',
     'lightingVillagerId','villagerID','VillagerID','villagerStringId',
     'villagerStringID','motherVillagerId','fatherVillagerId',
 }
 
 def _actors(world:dict)->list[dict]:
-    return [e for e in world.get('world',{}).get('entities',[])
-            if e.get('templateType')=='villager_type' and isinstance(e.get('id'),str)]
+    active = [e for e in world.get('world',{}).get('entities',[])
+              if e.get('templateType')=='villager_type' and isinstance(e.get('id'),str)]
+    return active + list(world.get('retiredVillagers', {}).values())
 
 def _new_suffix(owner, ident, used):
     value = int(hashlib.sha256(f'{owner}:{ident}'.encode()).hexdigest()[:6], 16) or 1

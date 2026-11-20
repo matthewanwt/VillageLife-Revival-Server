@@ -9,7 +9,7 @@ from .collection_projection import project_entities
 import copy
 import json
 import time
-from functools import cached_property
+from functools import cached_property, lru_cache
 import xml.etree.ElementTree as ET
 from .birth_skills import skill_type
 from .catalog import OriginalDefinitions
@@ -87,6 +87,10 @@ class OriginalWorldRules:
         return result
 
     def authored(self, area_id: int) -> list[dict]:
+        return copy.deepcopy(self._authored(area_id))
+
+    @lru_cache(maxsize=3)
+    def _authored(self, area_id: int) -> list[dict]:
         _area,scenario=self.defs.scenario_for_area(area_id)
         root=ET.fromstring(scenario['data'])
         entities=root.find('entities')
@@ -224,6 +228,7 @@ class OriginalWorldRules:
     def project_relations(self, state: dict, entities: list[dict]) -> None:
         people = {p['id']: p for p in state['world']['entities'] if p.get('templateType') == 'villager_type'}
         people.update(state.get('externalVillagers', {}))
+        people.update(state.get('retiredVillagers', {}))
         if not any(e.get('relations') for e in entities if e.get('templateType') == 'villager_type'):
             return
         kinds = {(int(row['Relationship']), int(row['genderTypeId'])): int(row['id'])

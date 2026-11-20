@@ -8,6 +8,9 @@ from pathlib import Path
 import csv
 import io
 import zipfile
+import tempfile
+import shutil
+from villagelife.core.limits import MAX_APK_BYTES, MAX_MANIFEST_BYTES, MAX_ARCHIVE_ENTRIES, validate_apk_archive
 
 class ClientAssets:
     def __init__(self, *, xapk:Path|None=None, obb:Path|None=None, inventory:Path|None=None):
@@ -16,10 +19,21 @@ class ClientAssets:
         self.entries={}
         if xapk:
             with zipfile.ZipFile(Path(xapk).resolve(strict=True)) as container:
+                if len(container.infolist()) > MAX_ARCHIVE_ENTRIES:
+                    raise ValueError('XAPK contains too many entries')
                 apk_names=[n for n in container.namelist() if n.endswith('.apk') and '/' not in n]
                 if len(apk_names)!=1:raise ValueError('Expected one root Android APK inside XAPK')
-                with zipfile.ZipFile(io.BytesIO(container.read(apk_names[0]))) as apk:
-                    self.manifest=apk.read('assets/origmanifest.xml')
+                if container.getinfo(apk_names[0]).file_size > MAX_APK_BYTES:
+                    raise ValueError('APK exceeds supported size')
+                with tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024) as nested:
+                    with container.open(apk_names[0]) as original:
+                        shutil.copyfileobj(original, nested, 1024 * 1024)
+                    nested.seek(0)
+                    with zipfile.ZipFile(nested) as apk:
+                        validate_apk_archive(apk)
+                        if apk.getinfo('assets/origmanifest.xml').file_size > MAX_MANIFEST_BYTES:
+                            raise ValueError('Manifest exceeds supported size')
+                        self.manifest=apk.read('assets/origmanifest.xml')
         if inventory:
             with Path(inventory).open(newline='',encoding='utf-8-sig') as fd:
                 for row in csv.DictReader(fd):

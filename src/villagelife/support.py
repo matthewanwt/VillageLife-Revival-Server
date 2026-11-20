@@ -9,7 +9,55 @@ import re
 import tempfile
 import uuid
 import zipfile
+import logging
+from contextvars import ContextVar
+from contextlib import contextmanager
 from villagelife.persistence.sqlite_store import SqliteSaveRepository
+
+_batch = ContextVar('diagnostic_batch', default=None)
+
+
+@contextmanager
+def batch_diagnostics(repo):
+    """Keep diagnostic counters off the per-RPC durable commit path."""
+    if _batch.get() is not None:
+        yield
+        return
+    statements = []
+    token = _batch.set((repo, statements))
+    try:
+        yield
+    finally:
+        _batch.reset(token)
+        if statements:
+            try:
+                with repo.transaction() as db:
+                    for sql, params in statements:
+                        db.execute(sql, params)
+                    if repo.diagnostic_run:
+                        for phase, (count, total, maximum) in getattr(repo._local, 'timings', {}).items():
+                            db.execute('INSERT INTO request_timings VALUES (?,?,?,?,?) '
+                                'ON CONFLICT(run_id,phase) DO UPDATE SET count=count+excluded.count, '
+                                'total_ms=total_ms+excluded.total_ms,max_ms=max(max_ms,excluded.max_ms)',
+                                (repo.diagnostic_run, phase, count, total, maximum))
+            except Exception:
+                logging.getLogger(__name__).warning('Diagnostic batch could not be saved (%d statements)',
+                                                    len(statements))
+
+
+@contextmanager
+def diagnostic_transaction(repo):
+    current = _batch.get()
+    if current is None or current[0] is not repo:
+        with repo.transaction() as db:
+            yield db
+    else:
+        class Buffer:
+            def execute(self, sql, params=()):
+                if len(current[1]) >= 2000:
+                    raise ValueError('Diagnostic batch limit reached')
+                current[1].append((sql, params))
+        yield Buffer()
 
 ALLOWED = {'/web/ClientService/Login', '/web/ClientService/Process', '/health',
            '/Playdemic.Community.Web/Client/Home', '/web/Playdemic.Community.Web/Client/Home',
@@ -33,6 +81,7 @@ def begin_diagnostic_run(repo: SqliteSaveRepository) -> None:
     with repo.transaction() as db:
         db.execute("INSERT OR REPLACE INTO metadata VALUES ('latest_diagnostic_run', ?)", (run_id,))
         db.execute('DELETE FROM diagnostic_run_outcomes')
+        db.execute('DELETE FROM request_timings')
     repo.diagnostic_run = run_id
 
 
@@ -51,7 +100,7 @@ def record_missing(repo: SqliteSaveRepository, method: str, path: str, status: i
     if method not in ('GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'RPC') or status not in (404, 501):
         return
     shape = endpoint_shape(path)
-    with repo.transaction() as db:
+    with diagnostic_transaction(repo) as db:
         if repo.diagnostic_run:
             _record_run_outcome(db, repo.diagnostic_run, method, shape, status)
             return
@@ -260,7 +309,7 @@ def record_original_call(repo: SqliteSaveRepository, service: str, status: int,
     if status >= 400:
         result_shape = (result_shape + '|failure=' + _failure_category(service, failure_message))[:5500]
     request_shape = _response_shape(request if request is not None else {})[:4000]
-    with repo.transaction() as db:
+    with diagnostic_transaction(repo) as db:
         if repo.diagnostic_run:
             _record_run_outcome(db, repo.diagnostic_run, 'CALL', shape, status, request_shape, result_shape)
             if status == 200:
@@ -296,6 +345,8 @@ def export_missing(repo: SqliteSaveRepository, target: Path | None = None,
         raise FileExistsError(target)
     with repo.connect() as db:
         db.execute('BEGIN')
+        timings = [dict(row) for row in db.execute('SELECT phase,count,total_ms,max_ms FROM request_timings '
+                    "WHERE run_id=(SELECT value FROM metadata WHERE key='latest_diagnostic_run')")]
         run = db.execute("SELECT value FROM metadata WHERE key='latest_diagnostic_run'").fetchone()
         if run is not None:
             rows = [dict(row) for row in db.execute('''
@@ -319,6 +370,7 @@ def export_missing(repo: SqliteSaveRepository, target: Path | None = None,
             scope = 'legacy_history'
             note = 'Counts are cumulative across runs.'
     data = {'format': 'VillageLifeMissingRequestsV1', 'contains_saves': False, 'scope': scope,
+            'performance_timings': timings,
             'note': (note + ' last_seen is UTC Unix time. Aggregated RPC request/response keys and JSON types; startup/area responses also include entity-type counts, material-source template-ID counts, and shelter bed layout counts. Wish outcomes include aggregate pending and cleared counts. No raw request/response values, entity IDs, call IDs, session tokens, save contents or player identifiers.'),
             'records': rows, 'call_outcomes': calls}
     with zipfile.ZipFile(target, 'x', compression=zipfile.ZIP_DEFLATED) as z:

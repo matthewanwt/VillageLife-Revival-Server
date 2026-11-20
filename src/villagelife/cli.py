@@ -42,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser('export'); a.add_argument('village_id'); a.add_argument('output', type=Path)
     a = sub.add_parser('import-portable'); a.add_argument('owner_id'); a.add_argument('archive', type=Path)
     a = sub.add_parser('backup-db'); a.add_argument('output', type=Path)
+    a = sub.add_parser('compact-db'); a.add_argument('output', type=Path,
+        help='Write a consistent compacted copy; never replaces the active database')
     a = sub.add_parser('add-local-gems'); a.add_argument('amount', type=int); a.add_argument('--village-id')
     sub.add_parser('list-gem-villages')
     a = sub.add_parser('serve'); a.add_argument('--port', type=int, default=8765)
@@ -51,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument('--xapk', type=Path, help='User-supplied original XAPK to read the original manifest')
     a.add_argument('--obb', type=Path, help='User-supplied OBB for original resource responses')
     a.add_argument('--inventory', type=Path, help='Resource-offset inventory for the OBB')
+    a.add_argument('--transport-key-file', type=Path, help=argparse.SUPPRESS)
     a = sub.add_parser('preview-legacy-villages'); a.add_argument('folder', type=Path)
     a = sub.add_parser('copy-legacy-village'); a.add_argument('folder', type=Path)
     a.add_argument('key'); a.add_argument('fingerprint')
@@ -72,6 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser('repair-prepared-obb'); a.add_argument('--apk', type=Path, required=True); a.add_argument('--obb', type=Path, required=True)
     a = sub.add_parser('check-original-game'); a.add_argument('--prepared', action='store_true')
     a.add_argument('--apk', type=Path); a.add_argument('--obb', type=Path)
+    a.add_argument('--verify-hash', action='store_true')
     a = sub.add_parser('probe-guest-backend'); a.add_argument('--port', type=int, default=80)
     a = sub.add_parser('launch-original-game')
     a.add_argument('--restart', action='store_true', help='Close only Village Life before launching it')
@@ -161,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.apk:
             installed = prepared_apk_installed(binding, args.apk)
         elif args.prepared:
-            installed = prepared_installation_ready(binding, args.obb)
+            installed = prepared_installation_ready(binding, args.obb, verify_hash=args.verify_hash)
         else:
             installed = existing_installation(binding)
         print(json.dumps({'package': 'com.playdemic.villagelife.android', 'installed': installed})); return 0
@@ -222,10 +226,18 @@ def main(argv: list[str] | None = None) -> int:
         print(PortableSaves(repo).export(args.village_id, args.output))
     elif args.command == 'import-portable':
         print('New village:', PortableSaves(repo).import_as_new(args.archive, args.owner_id))
-    elif args.command == 'backup-db':
+    elif args.command in {'backup-db', 'compact-db'}:
         if args.output.exists():
             parser.error('Backup already exists; refusing to overwrite')
-        repo.backup_to(args.output); print('Backup written:', args.output)
+        repo.backup_to(args.output)
+        if args.command == 'compact-db':
+            import sqlite3
+            from contextlib import closing
+            with closing(sqlite3.connect(args.output)) as db:
+                db.execute('VACUUM')
+                if db.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+                    raise ValueError('Compacted copy did not pass integrity verification')
+        print('Verified copy written:', args.output)
     elif args.command in {'list-gem-villages', 'add-local-gems'}:
         with repo.connect() as db:
             villages = db.execute("""
@@ -268,6 +280,14 @@ def main(argv: list[str] | None = None) -> int:
         if not 1 <= args.port <= 65535:
             parser.error('Port must be between 1 and 65535')
         from villagelife.transport.http_api import serve
+        transport_key = None
+        if args.transport_key_file:
+            transport_key = args.transport_key_file.read_text(encoding='ascii').strip()
+            if len(transport_key) != 12 or any(c not in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_' for c in transport_key):
+                raise ValueError('Prepared client capability is invalid. Run setup again.')
+        if args.game_tables and not transport_key:
+            raise ValueError('Prepared client capability is missing. Run setup with this launcher before playing.')
+        repo.enable_history_storage()
         original = assets = None
         if args.game_tables:
             from villagelife.protocol.original_client.catalog import OriginalDefinitions
@@ -280,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.xapk or args.obb or args.inventory or args.local_village_id:
             parser.error('--game-tables is required with original game resources')
         try:
-            serve(repo, args.port, original=original, assets=assets)
+            serve(repo, args.port, original=original, assets=assets, transport_key=transport_key)
         except OSError as exc:
             if exc.errno in {errno.EADDRINUSE, 10048} or getattr(exc, 'winerror', None) == 10048:
                 raise bs.InstanceError('VL-SERVER-PORT-IN-USE',

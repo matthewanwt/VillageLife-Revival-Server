@@ -1,5 +1,7 @@
 """Original shelter removal; no eviction, currency changes or invented refunds."""
 from __future__ import annotations
+from collections.abc import Mapping
+from villagelife.persistence.history import active_work
 
 SERVICE = 'ClientUserShelterService/DeleteUserShelter'
 
@@ -46,9 +48,9 @@ def validate_shelter_removal(state, data, definitions, *, require_empty=True):
                 for e in entities):
             raise ValueError('Move residents out before removing this shelter')
     jobs = state.get('workAreas', {})
-    if not isinstance(jobs, dict):
+    if not isinstance(jobs, Mapping):
         raise ValueError('Unknown active task layout')
-    for job in jobs.values():
+    for job in active_work(state):
         if not isinstance(job, dict):
             raise ValueError('Unknown active task record')
         if job.get('status') in {'harvested', 'cancelled'}:

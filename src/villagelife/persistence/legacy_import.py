@@ -12,6 +12,7 @@ import re
 import time
 import uuid
 from villagelife.persistence.sqlite_store import SqliteSaveRepository, dumps
+from villagelife.core.limits import bounded_read, checked_json, MAX_SAVE_BYTES, MAX_PROFILE_BYTES
 
 
 PROFILE_PATTERN = re.compile(r'^[0-9a-f]{64}\.json$')
@@ -46,10 +47,10 @@ class LegacySaveImporter:
             save_path = profile_path.with_suffix('.tutorial.json')
             if save_path.exists() and save_path.is_symlink():
                 raise ValueError('Save file symlink not permitted')
-            profile_raw = profile_path.read_bytes()
-            save_raw = save_path.read_bytes() if save_path.is_file() else b''
-            profile = json.loads(profile_raw.decode('utf-8'))
-            saved = json.loads(save_raw.decode('utf-8')) if save_raw else None
+            profile_raw = bounded_read(profile_path, MAX_PROFILE_BYTES)
+            save_raw = bounded_read(save_path, MAX_SAVE_BYTES) if save_path.is_file() else b''
+            profile = checked_json(profile_raw)
+            saved = checked_json(save_raw) if save_raw else None
             if not isinstance(profile, dict) or (saved is not None and not isinstance(saved, dict)):
                 raise ValueError(f'Invalid legacy record: {profile_path.name}')
             result = self._import_record(legacy_key, profile, saved, digest(profile_raw),

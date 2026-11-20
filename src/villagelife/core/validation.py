@@ -5,9 +5,14 @@ import math
 from .errors import InvalidAction
 
 
-def validate_json_tree(value: Any, *, max_depth: int = 80) -> None:
+def validate_json_tree(value: Any, *, max_depth: int = 80, max_nodes: int | None = None) -> None:
     """Check JSON-serialisable data, including finite numbers and bounded nesting."""
+    nodes = 0
     def visit(obj: Any, depth: int) -> None:
+        nonlocal nodes
+        nodes += 1
+        if max_nodes is not None and nodes > max_nodes:
+            raise InvalidAction('JSON contains too many values')
         if depth > max_depth:
             raise InvalidAction('Save exceeds nesting limit')
         if obj is None or isinstance(obj, (bool, str, int)):

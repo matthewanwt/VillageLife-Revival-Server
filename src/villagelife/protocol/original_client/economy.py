@@ -146,10 +146,16 @@ class OriginalEconomyRules:
         prior = state.setdefault('fortuneReceipts', {}).get(receipt)
         if prior is not None:
             return copy.deepcopy(prior)
-        if at < int(state['user'].get('NextDailySpinAt', 0)):
+        next_at = int(state['user'].get('NextDailySpinAt', 0))
+        if at < next_at:
             raise ValueError('Daily spin is not ready')
         old = state.get('dailySpin', {})
         increment = (int(old.get('increment', 0)) % 7 + 1) if old and at - int(old['at']) < 172800 else 1
+        if not old and next_at and at - next_at < 86400:
+            # Imported villages can carry the next spin in user data only.
+            saved_increment = int(state['user'].get('NextDailySpinIncrement', 0))
+            if 1 <= saved_increment <= 7:
+                increment = saved_increment
         definition = next((row for row in self.defs.rows('WofIncrement') if row['Increment'] == str(increment) and row['WofSet'] in {'2', '7'}), None)
         if definition is None:
             raise KeyError('Missing original daily wheel increment')
