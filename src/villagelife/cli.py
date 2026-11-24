@@ -47,6 +47,11 @@ def main(argv: list[str] | None = None) -> int:
         help='Write a consistent compacted copy; never replaces the active database')
     a = sub.add_parser('add-local-gems'); a.add_argument('amount', type=int); a.add_argument('--village-id')
     sub.add_parser('list-gem-villages')
+    sub.add_parser('list-local-villages')
+    sub.add_parser('create-local-village')
+    a = sub.add_parser('delete-local-village'); a.add_argument('village_id'); a.add_argument('--backup', type=Path)
+    a = sub.add_parser('delete-imported-village'); a.add_argument('key'); a.add_argument('--backup', type=Path); a.add_argument('--storage', type=Path)
+    a = sub.add_parser('restore-portable'); a.add_argument('archive', type=Path)
     a = sub.add_parser('serve'); a.add_argument('--port', type=int, default=8765)
     a.add_argument('--launcher-stdin', action='store_true', help=argparse.SUPPRESS)
     a.add_argument('--local-village-id', help='Open the explicitly selected local village for this server run')
@@ -216,6 +221,24 @@ def main(argv: list[str] | None = None) -> int:
             sys.argv = saved
         return 0
     repo = SqliteSaveRepository(args.db)
+    if args.command == 'list-local-villages':
+        from villagelife.protocol.original_client.villages import list_local_villages
+        print(json.dumps(list_local_villages(repo))); return 0
+    if args.command == 'create-local-village':
+        from villagelife.protocol.original_client.villages import create_local_village
+        print(json.dumps(create_local_village(repo))); return 0
+    if args.command == 'delete-local-village':
+        from villagelife.protocol.original_client.villages import delete_local_village
+        print(json.dumps(delete_local_village(repo, args.village_id,
+                                              backup=args.backup))); return 0
+    if args.command == 'delete-imported-village':
+        from villagelife.protocol.original_client.villages import delete_imported_village
+        print(json.dumps(delete_imported_village(repo, args.key,
+                                                 storage=args.storage,
+                                                 backup=args.backup))); return 0
+    if args.command == 'restore-portable':
+        from villagelife.protocol.original_client.villages import restore_portable_village
+        print(json.dumps(restore_portable_village(repo, args.archive))); return 0
     if args.command == 'export-missing-requests':
         from villagelife.support import export_missing
         print('Created:', export_missing(repo, current_run_only=True)); return 0

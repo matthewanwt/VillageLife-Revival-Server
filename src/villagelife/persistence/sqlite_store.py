@@ -258,6 +258,38 @@ class SqliteSaveRepository:
             self._sync_due(db, identifier, payload, format)
         return identifier
 
+    def delete_village(self, village_id: str) -> dict:
+        """Remove one village and its private rows without touching others.
+
+        A recovery copy must be created by the caller before this runs; this
+        method only performs the irreversible database cleanup.
+        """
+        with self.transaction() as db:
+            row = db.execute('SELECT owner_id FROM villages WHERE village_id=?',
+                             (village_id,)).fetchone()
+            if row is None:
+                raise NotFound(f'Unknown village: {village_id}')
+            owner = row['owner_id']
+            db.execute('DELETE FROM action_history WHERE village_id=?', (village_id,))
+            db.execute('DELETE FROM history_collections WHERE village_id=?', (village_id,))
+            db.execute('DELETE FROM due_jobs WHERE village_id=?', (village_id,))
+            db.execute('DELETE FROM receipts WHERE village_id=?', (village_id,))
+            db.execute('DELETE FROM legacy_imports WHERE village_id=?', (village_id,))
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                          "AND name='original_client_devices'").fetchone():
+                db.execute('DELETE FROM original_client_devices WHERE village_id=?',
+                           (village_id,))
+            db.execute('DELETE FROM villages WHERE village_id=?', (village_id,))
+            still_used = (db.execute('SELECT 1 FROM villages WHERE owner_id=?',
+                                     (owner,)).fetchone()
+                          or db.execute('SELECT 1 FROM legacy_imports WHERE account_id=?',
+                                        (owner,)).fetchone()
+                          or db.execute('SELECT 1 FROM friendships WHERE left_account=? '
+                                        'OR right_account=?', (owner, owner)).fetchone())
+            if not still_used:
+                db.execute('DELETE FROM accounts WHERE account_id=?', (owner,))
+        return {'village_id': village_id, 'account_id': owner}
+
     def _payload(self, row):
         started = time.perf_counter()
         payload = json.loads(row['payload_json'])

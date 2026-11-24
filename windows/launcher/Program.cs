@@ -28,7 +28,7 @@ public sealed partial class VillageLifeWindow : Form {
     const string ReleaseTitle = "Village Life Community Update " + ReleaseVersion;
     const string DataFolder = "VillageLifeRevivalNext";
 #endif
-    sealed class Settings { public string GameTables { get; set; }=""; public string Xapk { get; set; }=""; public string Inventory { get; set; }=""; public string? Obb { get; set; } public int Port { get; set; }=80; public bool ClientPrepared { get; set; } public bool PreparedFilesReady { get; set; } public bool VillageChoiceMade { get; set; } public string ImportedVillage { get; set; }=""; public string LocalVillage { get; set; }=""; }
+    sealed class Settings { public string GameTables { get; set; }=""; public string Xapk { get; set; }=""; public string Inventory { get; set; }=""; public string? Obb { get; set; } public int Port { get; set; }=80; public bool ClientPrepared { get; set; } public bool PreparedFilesReady { get; set; } public bool VillageChoiceMade { get; set; } public string ImportedVillage { get; set; }=""; public string LocalVillage { get; set; }=""; public string Theme { get; set; }=""; }
     readonly string root=Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName??AppContext.BaseDirectory;
     internal static string DefaultDatabase() {
         var alternate = Environment.GetEnvironmentVariable("VILLAGELIFE_DB");
@@ -184,6 +184,7 @@ public sealed partial class VillageLifeWindow : Form {
         dialog.Controls.Add(layout);
         dialog.AcceptButton=select;
         dialog.CancelButton=cancel;
+        ThemeManager.Apply(dialog);
         return dialog.ShowDialog(this)==DialogResult.OK ? items.SelectedIndex : -1;
     }
 
@@ -251,7 +252,7 @@ public sealed partial class VillageLifeWindow : Form {
         using var list = await ReadVillageList("list-legacy-villages");
         var copies = list.RootElement.EnumerateArray().ToArray();
         using var localList = File.Exists(defaultDatabase)
-            ? await ReadVillageList("--db",defaultDatabase,"list-gem-villages") : null;
+            ? await ReadVillageList("--db",defaultDatabase,"list-local-villages") : null;
         var local = localList?.RootElement.EnumerateArray().ToArray() ?? [];
         var settings = Read();
         var choices = new List<(string Label,string Imported,string Local)> {
