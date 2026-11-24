@@ -1,9 +1,15 @@
 """No user data: all records in these tests are invented fixtures."""
+import io
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
-from villagelife.core.errors import DuplicateActionConflict, RevisionConflict, InvalidAction
+from unittest.mock import patch
+
+from villagelife.cli import run
+from villagelife.core.errors import (DuplicateActionConflict, RevisionConflict,
+                                     InvalidAction, SaveSchemaError)
 from villagelife.core.model import empty_native_village
 from villagelife.persistence.sqlite_store import SqliteSaveRepository
 from villagelife.persistence.portable import PortableSaves
@@ -60,6 +66,36 @@ class PersistenceTests(unittest.TestCase):
         self.repo.backup_to(dest)
         copy = SqliteSaveRepository(dest)
         self.assertEqual(copy.read_village(self.village).account_id, self.account)
+
+    def test_unsupported_schema_raises_an_actionable_error(self):
+        with self.repo.connect() as db:
+            db.execute("UPDATE metadata SET value='99' WHERE key='schema_version'")
+        with self.assertRaises(SaveSchemaError) as caught:
+            SqliteSaveRepository(self.repo.path)
+        message = str(caught.exception)
+        self.assertIn('99', message)
+        self.assertIn('backup', message.casefold())
+        self.assertIn('older server', message.casefold())
+
+    def test_cli_reports_unsupported_schema_with_a_stable_code(self):
+        with self.repo.connect() as db:
+            db.execute("UPDATE metadata SET value='99' WHERE key='schema_version'")
+        error = io.StringIO()
+        with redirect_stderr(error):
+            code = run(['--db', str(self.repo.path), 'list-gem-villages'])
+        self.assertEqual(code, 3)
+        self.assertIn('[VL-SAVE-SCHEMA-UNSUPPORTED]', error.getvalue())
+
+    def test_cli_reports_backup_failure_with_a_stable_code(self):
+        error = io.StringIO()
+        destination = self.root / 'new-backup.sqlite3'
+        with patch.object(SqliteSaveRepository, 'backup_to',
+                          side_effect=PermissionError('denied')):
+            with redirect_stderr(error):
+                code = run(['--db', str(self.repo.path), 'backup-db', str(destination)])
+        self.assertEqual(code, 3)
+        self.assertIn('[VL-SAVE-BACKUP-FAILED]', error.getvalue())
+        self.assertIn('active save was not changed', error.getvalue())
 
 
 if __name__ == '__main__':

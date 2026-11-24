@@ -26,6 +26,7 @@ from villagelife.protocol.original_client.villagers import OriginalVillagerRules
 from villagelife.protocol.original_client.charms import OriginalBabyCharmRules
 from villagelife.protocol.original_client.family import OriginalFamilyRules
 from villagelife.protocol.original_client.quests import OriginalQuestRules
+from villagelife.protocol.original_client.tutorial import TutorialRules
 
 
 class Definitions:
@@ -355,6 +356,61 @@ class TicketRegressions(unittest.TestCase):
             repo=SqliteSaveRepository(repo.path)
             consume('next-meal',4601)
             self.assertEqual(repo.read_village(village).payload['originalSave']['normal']['inventory']['107'],3)
+
+    def test_intro_twins_are_ordered_the_way_the_client_names_them(self):
+        # Authored row order: steve 0, jill 4, brother 8, baby male 12,
+        # baby female 22, sister 29. The 2.11 client names the two intro
+        # babies by fixed position, not by identifier: receipt digests from a
+        # live save show the boy's name sent with the entry at position 2 and
+        # the girl's name with the entry at position 3. The server must build
+        # the new-village list in that same positional order.
+        class TwinDefinitions:
+            def rows(self, table):
+                return {
+                    'seq_state_tablet_ftue': [
+                        {'id':'0','order':'1','sequenceType':'62',
+                         'dataJSON':json.dumps({'refId':'steve'}),'persist':'0'},
+                        {'id':'1','order':'2','sequenceType':'62',
+                         'dataJSON':json.dumps({'refId':'jill'}),'persist':'0'},
+                        {'id':'2','order':'3','sequenceType':'62',
+                         'dataJSON':json.dumps({'refId':'baby female'}),'persist':'0'},
+                        {'id':'3','order':'4','sequenceType':'62',
+                         'dataJSON':json.dumps({'refId':'baby male'}),'persist':'0'},
+                        {'id':'4','order':'5','sequenceType':'62',
+                         'dataJSON':json.dumps({'refId':'sister'}),'persist':'0'},
+                        {'id':'5','order':'6','sequenceType':'62',
+                         'dataJSON':json.dumps({'refId':'brother'}),'persist':'0'},
+                    ],
+                    'villager_starting_variation': [
+                        {'id':'0','refId':'steve','name':'Invented Father',
+                         'villagerType':'1','startAge':'21'},
+                        {'id':'4','refId':'jill','name':'Invented Mother',
+                         'villagerType':'1','startAge':'21'},
+                        {'id':'8','refId':'brother','name':'Invented Brother',
+                         'villagerType':'1','startAge':'13'},
+                        {'id':'12','refId':'baby male','name':'Invented Boy',
+                         'villagerType':'3','startAge':'0'},
+                        {'id':'22','refId':'baby female','name':'Invented Girl',
+                         'villagerType':'3','startAge':'0'},
+                        {'id':'29','refId':'sister','name':'Invented Sister',
+                         'villagerType':'11','startAge':'8'},
+                    ],
+                }.get(table, [])
+
+        rules=TutorialRules(TwinDefinitions())
+        save=rules.fresh()
+        villagers=save['userHash']['data']['villagers']
+        self.assertEqual([v['refId'] for v in villagers],
+                         ['steve','jill','baby male','baby female','sister','brother'])
+        boy_name='Invented Twin Boy';girl_name='Invented Twin Girl'
+        for position,name in ((2,boy_name),(3,girl_name)):
+            rules.run(save,'ClientUserHashService/SetVillagerName',
+                      {'villagerId':villagers[position]['id'],'name':name})
+        names={v['refId']:v['name'] for v in villagers}
+        self.assertEqual(names['baby male'],boy_name)
+        self.assertEqual(names['baby female'],girl_name)
+        self.assertEqual(names['brother'],'Invented Brother')
+        self.assertEqual(names['sister'],'Invented Sister')
 
 
 if __name__=='__main__':

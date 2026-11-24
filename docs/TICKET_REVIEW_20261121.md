@@ -1,6 +1,9 @@
 # Community ticket review — 21 November 2026
 
-This is an unreleased source update. No installer, release tag, or public download
+> Status: the source changes described below shipped in 0.4.1. This review text
+> is retained as written at the time of the pass.
+
+This was a source-only update at the time of the pass. No installer, release tag, or public download
 was published in this pass. The 35 accessible numbered tickets contained 265
 messages, including follow-ups and duplicates. Private messages, media, and
 diagnostic archives remain outside the repository.

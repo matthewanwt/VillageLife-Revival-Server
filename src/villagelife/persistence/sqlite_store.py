@@ -18,7 +18,7 @@ import threading
 from .history import History, COLLECTIONS, json_default
 
 from villagelife.core.errors import (
-    DuplicateActionConflict, InvalidAction, NotFound, RevisionConflict,
+    DuplicateActionConflict, InvalidAction, NotFound, RevisionConflict, SaveSchemaError,
 )
 from villagelife.core.model import VillageSnapshot
 
@@ -133,7 +133,11 @@ class SqliteSaveRepository:
                           FROM original_call_outcomes''')
             row = db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()
             if row and row['value'] not in {'1', '2'}:
-                raise RuntimeError('Unsupported database schema version: '+row['value'])
+                raise SaveSchemaError(
+                    'This save database uses schema version '+row['value']+', which this '
+                    'server cannot read. Open it with the launcher that created it, or '
+                    'restore a backup made before the upgrade. Do not open an upgraded '
+                    'save with an older server.')
             db.execute("INSERT OR IGNORE INTO metadata VALUES ('schema_version','1')")
             self.history_enabled = db.execute("SELECT 1 FROM metadata WHERE key='history_storage_v1'").fetchone() is not None
             if not db.execute("SELECT 1 FROM metadata WHERE key='due_index_v1'").fetchone():

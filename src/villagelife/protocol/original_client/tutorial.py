@@ -12,6 +12,13 @@ from villagelife.protocol.original_client.randomness import new_state, choice
 
 STARTING_GEMS = 1000
 
+# The 2.11 client names the two opening babies by fixed list position, not by
+# identifier: position 2 receives the boy's name and position 3 the girl's.
+# Authored seq_state_tablet_ftue lists the girl first, so a new-village list
+# built in table order would swap the twins' names. Keep the canonical order
+# here; existing saves are never reordered.
+INTRO_VILLAGER_ORDER = ('steve', 'jill', 'baby male', 'baby female', 'sister', 'brother')
+
 
 class TutorialRules:
     def __init__(self, definitions: OriginalDefinitions):
@@ -21,17 +28,21 @@ class TutorialRules:
     def fresh(self) -> dict:
         steps=self.defs.rows('seq_state_tablet_ftue')
         required={json.loads(s['dataJSON'])['refId'] for s in steps if s['sequenceType']=='62'}
-        villagers=[]
-        rng=new_state()
+        sources={}
         for source in self.defs.rows('villager_starting_variation'):
             ref=source['refId']
             if ref=='sister' and (source['villagerType']!='11' or not 5<=int(source['startAge'])<=12):
                 continue
-            if ref in required and not any(v['refId']==ref for v in villagers):
-                villagers.append({'id':ref,'refId':ref,'name':source['name'],'variationId':int(source['id'])})
+            if ref in required and ref not in sources:
+                sources[ref]=source
+        order=[ref for ref in INTRO_VILLAGER_ORDER if ref in sources]
+        order += [ref for ref in sources if ref not in order]
+        villagers=[{'id':ref,'refId':ref,'name':sources[ref]['name'],
+                    'variationId':int(sources[ref]['id'])} for ref in order]
         # The authored table contains four distinct name, hair and appearance
         # variants for each of the two opening adults. Select once and persist
         # the seed and chosen variation with the account's first tutorial save.
+        rng=new_state()
         variations=self.defs.rows('villager_starting_variation')
         for ref in ('steve','jill'):
             candidates=[row for row in variations if row['refId']==ref]

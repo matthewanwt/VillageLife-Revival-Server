@@ -4,11 +4,16 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
+from villagelife.persistence.history import History, unpack_record
 from villagelife.persistence.sqlite_store import SqliteSaveRepository
+from villagelife.protocol.original_client.catalog import OriginalDefinitions
+from villagelife.protocol.original_client.services import OriginalClientGame
 from villagelife.protocol.original_client.sessions import OriginalClientSessions
 from villagelife.protocol.original_client.wants import OriginalWantRules
 import test_original_daily as daily_fixture
+from test_original_client import fake_tables
 
 
 class SaveEfficiencyTests(unittest.TestCase):
@@ -35,6 +40,108 @@ class SaveEfficiencyTests(unittest.TestCase):
         self.assertEqual(state['inventory'], before['inventory'])
         self.assertEqual(record['futureField'], {'preserve': True})
         self.assertLess(len(json.dumps(state)), len(json.dumps(before)))
+
+    def test_login_compacts_legacy_consumption_snapshots_only_once(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            fake_tables(root / 'tables.sqlite3')
+            repo = SqliteSaveRepository(root / 'worlds.sqlite3')
+            game = OriginalClientGame(repo, OriginalDefinitions(root / 'tables.sqlite3'))
+            device = {'deviceId': 'legacy-consumption-device'}
+            profile = game.login(device)['data']['users'][0]
+            identity = game.sessions.authenticate(profile)
+            legacy = {
+                'villagerId': 'caregiver', 'materialId': 107, 'consumedAt': 100,
+                'response': {
+                    'inventory': [{'materialTypeId': 107, 'amount': 9}],
+                    'result': {'inventory': [{'materialTypeId': 107, 'amount': 9}],
+                               'Xp': 1},
+                    'HappinessModel': {'VillagerStringID': 'caregiver'},
+                    'futureField': {'preserve': True},
+                },
+            }
+            def seed(payload):
+                payload['originalSave']['normal'] = {
+                    'areaId': 1, 'world': {'entities': []}, 'user': {},
+                    'inventory': {'107': 9},
+                    'directConsumptionReceipts': {'legacy-key': copy.deepcopy(legacy)},
+                }
+                return {}
+            repo.mutate(identity.village_id, operation_key='fixture:legacy-consumption',
+                        request={}, change=seed)
+            repo.enable_history_storage()
+            # The first login after enabling history storage must compact the
+            # legacy snapshots while they are still hot, then archive them.
+            game.login(device)
+            with repo.connect() as db:
+                row = db.execute(
+                    'SELECT payload_json FROM action_history WHERE village_id=? '
+                    "AND collection='directConsumptionReceipts' AND item_key='legacy-key'",
+                    (identity.village_id,)).fetchone()
+            self.assertIsNotNone(row)
+            archived = json.loads(unpack_record(row[0]))
+            self.assertNotIn('inventory', archived['response'])
+            self.assertNotIn('inventory', archived['response']['result'])
+            self.assertEqual(archived['response']['futureField'], {'preserve': True})
+            self.assertEqual(archived['response']['HappinessModel'],
+                             {'VillagerStringID': 'caregiver'})
+            with repo.connect() as db:
+                migration = db.execute(
+                    'SELECT 1 FROM receipts WHERE village_id=? '
+                    "AND operation_key='original:migrate:consumption-history-v1'",
+                    (identity.village_id,)).fetchone()
+            self.assertIsNotNone(migration)
+            # Later logins replay the one-time migration receipt instead of
+            # iterating archived receipts again.
+            with patch.object(History, '__iter__',
+                              side_effect=AssertionError('scanned cold receipt history')):
+                game.login(device)
+
+    def test_consumption_migration_compacts_already_archived_receipts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            fake_tables(root / 'tables.sqlite3')
+            repo = SqliteSaveRepository(root / 'worlds.sqlite3')
+            game = OriginalClientGame(repo, OriginalDefinitions(root / 'tables.sqlite3'))
+            device = {'deviceId': 'archived-consumption-device'}
+            profile = game.login(device)['data']['users'][0]
+            identity = game.sessions.authenticate(profile)
+            legacy = {
+                'villagerId': 'caregiver', 'materialId': 107, 'consumedAt': 100,
+                'response': {
+                    'inventory': [{'materialTypeId': 107, 'amount': 9}],
+                    'result': {'inventory': [{'materialTypeId': 107, 'amount': 9}],
+                               'Xp': 1},
+                },
+            }
+            def seed(payload):
+                payload['originalSave']['normal'] = {
+                    'areaId': 1, 'world': {'entities': []}, 'user': {},
+                    'inventory': {'107': 9},
+                    'directConsumptionReceipts': {'archived-key': copy.deepcopy(legacy)},
+                }
+                return {}
+            repo.mutate(identity.village_id, operation_key='fixture:archived-consumption',
+                        request={}, change=seed)
+            repo.enable_history_storage()
+            # Archive the legacy snapshot before the login migration runs.
+            repo.mutate(identity.village_id, operation_key='fixture:archive',
+                        request={}, change=lambda payload: {})
+            with repo.connect() as db:
+                before = db.execute(
+                    'SELECT payload_json FROM action_history WHERE village_id=? '
+                    "AND collection='directConsumptionReceipts' AND item_key='archived-key'",
+                    (identity.village_id,)).fetchone()
+            self.assertIn('inventory', unpack_record(before[0]))
+            game.login(device)
+            with repo.connect() as db:
+                row = db.execute(
+                    'SELECT payload_json FROM action_history WHERE village_id=? '
+                    "AND collection='directConsumptionReceipts' AND item_key='archived-key'",
+                    (identity.village_id,)).fetchone()
+            archived = json.loads(unpack_record(row[0]))
+            self.assertNotIn('inventory', archived['response'])
+            self.assertNotIn('inventory', archived['response']['result'])
 
     def test_session_rotation_discards_only_invalidated_session_receipts(self):
         with tempfile.TemporaryDirectory() as folder:

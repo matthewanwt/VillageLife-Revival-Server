@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import zipfile
 import json
+import re
 from unittest.mock import patch
 from datetime import datetime, timezone
 from villagelife.persistence.sqlite_store import SqliteSaveRepository
@@ -39,6 +40,55 @@ class SupportTests(unittest.TestCase):
             with zipfile.ZipFile(out) as z: text=z.read('diagnostics.json').decode()
             self.assertNotIn('PRIVATE_FULL_PATH',text)
             self.assertIn('Pie64_4',text)
+
+    def test_support_bundle_includes_version_provenance_and_run_summary(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder); repo=SqliteSaveRepository(path/'db.sqlite3')
+            begin_diagnostic_run(repo)
+            record_original_call(repo, 'ClientMaterialService/GetUserMaterialTypes', 200, {})
+            bind=path/'binding.json'
+            bind.write_text(json.dumps({'id':'Pie64_4','adb_port':5595,
+                                        'install_dir':'PRIVATE_FULL_PATH'}))
+            manifest=path/'BUILD-MANIFEST.json'
+            manifest.write_text(json.dumps({
+                'format':'VillageLifeBuildManifestV1',
+                'validation':{'revision':'abc123','passed':True,'dirty_source':False},
+                'source_sha256':'deadbeef','authenticode_signed':False,
+                'payload_sha256':{'private/file':'secret'}}))
+            out=export_support(path/'support.zip', bind, launcher_version='0.4.1',
+                               manifest=manifest, repo=repo)
+            with zipfile.ZipFile(out) as z:
+                diagnostics=json.loads(z.read('diagnostics.json'))
+                missing=json.loads(z.read('missing-requests.json'))
+            self.assertEqual(diagnostics['server_version'], '0.4.1')
+            self.assertEqual(diagnostics['launcher_version'], '0.4.1')
+            self.assertEqual(diagnostics['build']['revision'], 'abc123')
+            self.assertTrue(diagnostics['build']['validation_passed'])
+            self.assertEqual(diagnostics['instance_id'], 'Pie64_4')
+            self.assertNotIn('PRIVATE_FULL_PATH', json.dumps(diagnostics))
+            self.assertNotIn('private/file', json.dumps(diagnostics))
+            self.assertEqual(missing['scope'], 'latest_server_run')
+            self.assertEqual(missing['call_outcomes'][0]['service_shape'],
+                             'ClientMaterialService/GetUserMaterialTypes')
+
+    def test_large_shape_markers_are_plain_text(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo=SqliteSaveRepository(Path(folder)/'db.sqlite3')
+            record_original_call(repo, 'ClientExample/Truncated', 200,
+                                 {f'field{i}': i for i in range(40)})
+            with repo.connect() as db:
+                shape=db.execute('SELECT response_shape FROM original_call_outcomes').fetchone()[0]
+            self.assertIn('...', shape)
+            self.assertNotIn('Ã', shape)
+
+    def test_reported_version_matches_project_and_launcher(self):
+        from villagelife import __version__
+        root = Path(__file__).resolve().parents[1]
+        project = (root / 'pyproject.toml').read_text(encoding='utf-8')
+        launcher = (root / 'windows/launcher/Program.cs').read_text(encoding='utf-8')
+        self.assertEqual(__version__,
+                         re.search(r'^version = "([^"]+)"', project, re.MULTILINE).group(1))
+        self.assertIn(f'const string ReleaseVersion = "{__version__}";', launcher)
 
     def test_habitat_failures_get_useful_private_value_free_categories(self):
         with tempfile.TemporaryDirectory() as folder:

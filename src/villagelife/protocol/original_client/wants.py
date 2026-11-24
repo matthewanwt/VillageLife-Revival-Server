@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+from collections.abc import MutableMapping
 from decimal import Decimal
 from functools import cached_property, lru_cache
 from .daily import DailyLife, satisfy_wants
@@ -302,8 +303,11 @@ class OriginalWantRules:
         removed = 0
         for name in ('consumptionReceipts', 'directConsumptionReceipts'):
             records = state.get(name, {})
-            if not isinstance(records, dict):
+            if not isinstance(records, MutableMapping):
                 continue
+            load_all = getattr(records, 'load_all', None)
+            if load_all is not None:
+                load_all()
             for record in records.values():
                 response = record.get('response') if isinstance(record, dict) else None
                 if not isinstance(response, dict):

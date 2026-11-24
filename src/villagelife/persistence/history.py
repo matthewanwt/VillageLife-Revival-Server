@@ -89,6 +89,18 @@ class History(MutableMapping):
     def active_values(self):
         return self.active.values()
 
+    def load_all(self):
+        """Load every archived record once for a bulk migration scan."""
+        with self.repo.connect() as db:
+            rows = db.execute('SELECT item_key,payload_json FROM action_history '
+                              'WHERE village_id=? AND collection=?',
+                              (self.village, self.name)).fetchall()
+        for key, raw in rows:
+            if key in self.deleted or key in self.loaded or key in self.active:
+                continue
+            self.original[key] = unpack_record(raw)
+            self.loaded[key] = json.loads(self.original[key])
+
     def persist(self, db, encode, validate):
         hot = {}
         for key in self.deleted:
