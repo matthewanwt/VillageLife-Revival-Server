@@ -92,7 +92,7 @@ NORMAL_READ|={'ClientVillagerService/GetVillagerRelations','ClientVillagerServic
 ECONOMY_SERVICES={'ClientMaterialService/BuyMaterialType',
                   'ClientMaterialService/BuyStoreItem',
                   'ClientMaterialService/SellMaterialType',
-                  'ClientFortune/GetWOFSpinResult'}
+                  'ClientFortune/GetWOFSpinResult', 'ClientFortune/GetGemMegaSpinResult'}
 USER_BUNDLE_SERVICES={'ClientUserBundleService/CreateUserBundle'}
 QUEST_SERVICES={'ClientQuestService/AddQuest','ClientQuestService/CompleteQuest',RETIRE}
 PROGRESSION_SERVICES={'ClientUser/IncreaseLevel','ClientUser/CompleteTutorial'}
@@ -118,7 +118,11 @@ from .shelter_removal import SERVICE as REMOVE_SHELTER, validate_shelter_removal
 EMPTY_BED = 'ClientUserShelterService/EmptyBed'
 
 class OriginalClientGame:
-    def __init__(self, repository:SqliteSaveRepository, definitions:OriginalDefinitions, *, selected_village=None):
+    def __init__(self, repository:SqliteSaveRepository, definitions:OriginalDefinitions, *, selected_village=None,
+                 enable_gem_mega_spin=False):
+        if type(enable_gem_mega_spin) is not bool:
+            raise ValueError('Mega Spin opt-in must be boolean')
+        self.enable_gem_mega_spin = enable_gem_mega_spin
         self.repo=repository
         self.defs=definitions
         self.sessions=OriginalClientSessions(repository, selected_village=selected_village)
@@ -411,6 +415,8 @@ class OriginalClientGame:
                 return
 
     def _execute(self, ident, call, service:str, data:dict, save, *, legacy_import=False, pending=None)->dict:
+        if service == 'ClientFortune/GetGemMegaSpinResult' and not self.enable_gem_mega_spin:
+            raise NotImplementedError('Gem-priced Mega Spin is disabled')
         if not isinstance(save,dict):raise ValueError('Original tutorial not initialised; log in again')
         if service in NORMAL_READ and service!='ClientStartupService/GetAreaContent':
             normal = save.get('normal') or {}
@@ -559,6 +565,11 @@ class OriginalClientGame:
                     result=self.economy.buy_store_item(normal,data,operation_key)
                 elif service=='ClientMaterialService/SellMaterialType':
                     result=self.economy.sell_material(normal,data,operation_key)
+                elif service=='ClientFortune/GetGemMegaSpinResult':
+                    rng=save.get('rng')
+                    if rng is None:
+                        rng=save['rng']=new_state()
+                    result=self.economy.gem_mega_spin(normal,data,rng)
                 else:
                     rng=save.get('rng')
                     if rng is None:

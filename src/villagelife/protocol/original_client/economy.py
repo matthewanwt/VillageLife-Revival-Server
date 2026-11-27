@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 import struct
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -169,4 +170,28 @@ class OriginalEconomyRules:
         response = {'result': {'WheelOfFortuneModel': model}, 'user': copy.deepcopy(state['user'])}
         state['fortuneReceipts'][receipt] = copy.deepcopy(response)
         state['revision'] = int(state.get('revision', 0)) + 1
+        return response
+
+    def gem_mega_spin(self, state: dict, data: dict, rng: dict) -> dict:
+        """Optional 20-gem purchase, called within the ordinary save transaction."""
+        if (set(data) != {'intentId', 'confirmedGemCost'}
+                or not isinstance(data['intentId'], str)
+                or not re.fullmatch('[a-f0-9]{32}', data['intentId'])
+                or type(data['confirmedGemCost']) is not int or data['confirmedGemCost'] != 20):
+            raise ValueError('A stable purchase intent and confirmation of 20 gems are required')
+        intent = data['intentId']
+        prior = state.get('gemMegaSpinReceipts', {}).get(intent)
+        if prior is not None:
+            return copy.deepcopy(prior)
+        if self._item('WofSet', 1).get('CurrencyPayment') != '766':
+            raise ValueError('Mega wheel payment definition differs from the reviewed set')
+        spend_gems(state, 20)
+        model = self._draw_wheel(1, 1, rng)
+        for reward in model['MaterialTypes']:
+            key = str(reward['MaterialTypeId'])
+            state['inventory'][key] = float(self._number(state['inventory'].get(key, 0)) + reward['Amount'])
+        state['revision'] = int(state.get('revision', 0)) + 1
+        response = {'result': {'WheelOfFortuneModel': model}, 'gemsSpent': 20,
+                    'inventory': self.inventory.list_items(state)}
+        state.setdefault('gemMegaSpinReceipts', {})[intent] = copy.deepcopy(response)
         return response
