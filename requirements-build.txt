@@ -1,6 +1,6 @@
 # Reviewed build tools. Runtime backend uses the Python standard library.
 altgraph==0.17.5
-packaging==26.3
+packaging==26.4
 pefile==2024.8.26; sys_platform == 'win32'
 pyinstaller==6.22.3
 pyinstaller-hooks-contrib==2026.10
