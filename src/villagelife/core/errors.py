@@ -27,3 +27,11 @@ class NotFound(VillageLifeError):
 
 class MigrationConflict(VillageLifeError):
     """Previously imported legacy data differs from the source now supplied."""
+
+
+class SaveSchemaError(VillageLifeError):
+    """The save database was written by a server version that cannot be read."""
+
+
+class SaveBackupError(VillageLifeError):
+    """A recovery copy could not be created or verified."""

@@ -21,6 +21,7 @@ public sealed partial class VillageLifeWindow {
     readonly ListBox villages=new(){Dock=DockStyle.Top,Height=160,HorizontalScrollbar=true,IntegralHeight=false,AccessibleName="Saved villages"};
     readonly List<(string Label,string Imported,string Local)> villageChoices=new();
     readonly ListBox backups=new(){Dock=DockStyle.Top,Height=160,HorizontalScrollbar=true,IntegralHeight=false,AccessibleName="Recovery backups"};
+    readonly ComboBox themeChoice=new(){DropDownStyle=ComboBoxStyle.DropDownList,Width=150,AccessibleName="Appearance theme"};
     readonly TableLayoutPanel notice=new(){AutoSize=true,Dock=DockStyle.Top,ColumnCount=1,Padding=new Padding(12),Visible=false,BackColor=SystemColors.Info,ForeColor=SystemColors.InfoText,AccessibleName="Action required"};
     readonly Label noticeText=Body("");
     readonly Button retry=new(){Text="Retry",AutoSize=true,MinimumSize=new Size(90,34)};
@@ -64,6 +65,8 @@ public sealed partial class VillageLifeWindow {
         scroll.Controls.Add(content);pageHost.Controls.Add(scroll);pages.Add(name,scroll);return content;
     }
     void BuildDashboard() {
+        var appearance=Read();
+        ThemeManager.SetDark(string.Equals(appearance.Theme,"dark",StringComparison.OrdinalIgnoreCase));
         Text=ReleaseTitle;Font=new Font("Segoe UI",9.5F);AutoScaleMode=AutoScaleMode.Dpi;
         ClientSize=new Size(1000,Math.Min(780,Screen.FromControl(this).WorkingArea.Height-100));MinimumSize=new Size(820,640);StartPosition=FormStartPosition.CenterScreen;
         Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);BackColor=SystemColors.Window;ForeColor=SystemColors.WindowText;
@@ -80,7 +83,7 @@ public sealed partial class VillageLifeWindow {
             var nav=new Button{Text=name,TextAlign=ContentAlignment.MiddleLeft,Dock=DockStyle.Top,Height=44,FlatStyle=FlatStyle.Flat,Padding=new Padding(8,0,0,0),Margin=new Padding(0,0,0,5),AccessibleName=name+" page"};
             nav.FlatAppearance.BorderSize=0;nav.Click+=(_,_)=>ShowPage(name);navigation.Add(name,nav);sidebar.Controls.Add(nav);
         }
-        sidebar.Controls.Add(new Label{Text="Community launcher\n"+ReleaseVersion,AutoSize=true,Margin=new Padding(10,24,0,0)});
+        sidebar.Controls.Add(new Label{Text="Community launcher\n"+ReleaseVersion,AutoSize=true,Margin=new Padding(10,24,0,0),Tag="muted"});
         sidebar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         shell.Controls.Add(sidebar,0,1);
         var main=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,AccessibleName="Current page"};
@@ -106,11 +109,20 @@ public sealed partial class VillageLifeWindow {
         play.Controls.Add(Card([Heading("Setup checklist"),..checklist,Body("Play checks these steps every time. If setup pauses, follow the instructions and then retry.")]));
 
         var saves=Page("My Villages","Choose which village opens in BlueStacks. Switching villages does not delete your other saves.");
-        saves.Controls.Add(Card(Heading("Saved villages"),Body("Select a village below, then choose Use selected village. Click Play when you are ready to open it."),villages,Row(ActionButton("Use selected village",UseSelectedVillage),ActionButton("Refresh list",RefreshVillageDetails))));
+        saves.Controls.Add(Card(Heading("Saved villages"),
+            Body("Select a village, then choose Use selected village. Create new village starts a separate tutorial. Delete removes only the selected village after an optional recovery backup."),
+            villages,
+            Row(ActionButton("Use selected village",UseSelectedVillage),
+                ActionButton("Create new village",CreateNewVillage,true),
+                ActionButton("Delete village",DeleteSelectedVillage),
+                ActionButton("Refresh list",RefreshVillageDetails))));
         saves.Controls.Add(Card(Heading("Coming from 0.2.6?"),Body("Extract your backup ZIP first. Select the old installation or private_state folder to import a copy; keep the original backup safe."),ActionButton("Import 0.2.6 save",async()=>{await ImportLegacy();})));
 
         var recovery=Page("Backups","Recovery copies are separate from your active village. A backup includes the complete database and its history.");
-        recovery.Controls.Add(Card(Heading("Recovery copies"),backupStatus,backups,Row(ActionButton("Back up now",BackupNow),ActionButton("Open backup folder",OpenBackupFolder))));
+        recovery.Controls.Add(Card(Heading("Recovery copies"),backupStatus,backups,
+            Row(ActionButton("Back up now",BackupNow),
+                ActionButton("Restore deleted village",RestoreFromBackup),
+                ActionButton("Open backup folder",OpenBackupFolder))));
         recovery.Controls.Add(Card(Heading("Keep your village safe"),Body("Successful game actions are saved as you play. Use Back up now before moving computers or changing versions. To recover an older village, stop the game and keep a copy of your current save first."),ActionButton("Recovery instructions",()=>{ShowPage("Help");return Task.CompletedTask;})));
 
         var helpPage=Page("Help","Start here if setup pauses or something in the game does not work.");
@@ -124,20 +136,35 @@ public sealed partial class VillageLifeWindow {
         var settingsPage=Page("Settings","Manage setup and optional tools. Your current village is shown on Play.");
         settingsPage.Controls.Add(Card(Heading("BlueStacks and connection"),Body("Change the dedicated instance or run setup again. Stop the server before changing instances."),Row(ActionButton("Set up / change instance",Setup),ActionButton("Check connection",Connection))));
         settingsPage.Controls.Add(Card(Heading("Gems"),Body("Add a whole number of gems to a selected village. If the game is running, it restarts after the change is saved."),ActionButton("Add Gems",AddGems)));
-        settingsPage.Controls.Add(Card(Heading("Appearance and language"),Body("Uses familiar Windows controls and display scaling. Launcher instructions are currently in English; the game's language remains separate.")));
+        themeChoice.Items.AddRange(["Light","Dark"]);
+        themeChoice.SelectedIndex=ThemeManager.Dark?1:0;
+        themeChoice.SelectedIndexChanged+=(_,_)=>ChangeTheme(themeChoice.SelectedIndex==1);
+        settingsPage.Controls.Add(Card(Heading("Appearance and language"),
+            Body("Choose Light or Dark. The change applies immediately and is remembered next time. Launcher instructions are currently in English; the game's language remains separate."),
+            Row(new Label{Text="Theme",AutoSize=true,Anchor=AnchorStyles.Left,Margin=new Padding(0,8,12,0)},themeChoice)));
         dashboardClock.Tick+=(_,_)=>{if(busy)elapsedStatus.Text=$"{currentAction} · {actionElapsed.Elapsed:mm\\:ss} elapsed";};dashboardClock.Start();
         FormClosed+=(_,_)=>selectedNavigationFont.Dispose();
-        RenderChecklist();ShowPage("Play");
+        RenderChecklist();ShowPage("Play");ApplyTheme();
     }
     void ShowPage(string name) {
         currentPage=name;
         foreach(var pair in pages)pair.Value.Visible=pair.Key==name;
         foreach(var pair in navigation) {
             pair.Value.Font=pair.Key==name?selectedNavigationFont:Font;
-            pair.Value.BackColor=pair.Key==name?SystemColors.Window:SystemColors.Control;
+            pair.Value.BackColor=pair.Key==name?ThemeManager.Palette.SelectedNav:ThemeManager.Palette.Control;
+            pair.Value.ForeColor=ThemeManager.Palette.NavText;
             pair.Value.AccessibleDescription=pair.Key==name?"Selected page":"Open "+pair.Key;
         }
         pageTitle.Text=name;pages[name].BringToFront();
+    }
+    void ApplyTheme() {
+        ThemeManager.Apply(this);
+        if(!string.IsNullOrEmpty(currentPage)&&pages.ContainsKey(currentPage))ShowPage(currentPage);
+    }
+    void ChangeTheme(bool dark) {
+        if(ThemeManager.Dark==dark)return;
+        var settings=Read();settings.Theme=dark?"dark":"light";Write(settings);
+        ThemeManager.SetDark(dark);ApplyTheme();
     }
     void ShowTechnicalLog(){ShowPage("Help");output.Focus();output.SelectionStart=output.TextLength;output.ScrollToCaret();}
     bool ServerRunning=>backend is {HasExited:false};
@@ -212,7 +239,7 @@ public sealed partial class VillageLifeWindow {
         villageChoices.Add(("Use the village linked to the selected BlueStacks instance","",""));
         JsonElement[] localRows=[];
         if(File.Exists(defaultDatabase)) {
-            using var local=await ReadVillageList("--db",defaultDatabase,"list-gem-villages");
+            using var local=await ReadVillageList("--db",defaultDatabase,"list-local-villages");
             localRows=local.RootElement.EnumerateArray().Select(row=>row.Clone()).ToArray();
             foreach(var row in localRows)villageChoices.Add((LocalVillageLabel(row),"",row.GetProperty("village_id").GetString()!));
         }
@@ -224,8 +251,13 @@ public sealed partial class VillageLifeWindow {
             if(!string.IsNullOrEmpty(settings.LocalVillage))selected=rows.Where(row=>row.GetProperty("village_id").GetString()==settings.LocalVillage).Select(row=>(JsonElement?)row).FirstOrDefault();
             else if(rows.Length==1)selected=rows[0];
             if(selected is { } village) {
-                homeVillage.Text=village.GetProperty("name").GetString()+$" · Level {village.GetProperty("level").GetInt32()} · {village.GetProperty("gems").GetDecimal():N0} gems";
-                saveStatus.Text="Last recorded save: "+DateTimeOffset.FromUnixTimeSeconds(village.GetProperty("last_saved").GetInt64()).ToLocalTime().ToString("g")+". Refresh details to check again.";
+                if(village.TryGetProperty("stage",out var stage)&&stage.GetString()=="tutorial") {
+                    homeVillage.Text="New village ("+village.GetProperty("village_id").GetString()![..8]+")";
+                    saveStatus.Text="This village starts at the tutorial. Click Play to begin it in BlueStacks.";
+                } else {
+                    homeVillage.Text=village.GetProperty("name").GetString()+$" · Level {village.GetProperty("level").GetInt32()} · {village.GetProperty("gems").GetDecimal():N0} gems";
+                    saveStatus.Text="Last recorded save: "+DateTimeOffset.FromUnixTimeSeconds(village.GetProperty("last_saved").GetInt64()).ToLocalTime().ToString("g")+". Refresh details to check again.";
+                }
             } else if(rows.Length>1)saveStatus.Text="This file contains several villages. Choose village to select one explicitly; otherwise BlueStacks uses its linked village.";
             else saveStatus.Text="No Woodland village listed yet. Complete the tutorial first, or select another saved village.";
         }
@@ -238,6 +270,75 @@ public sealed partial class VillageLifeWindow {
         villages.SelectedIndex=Math.Max(0,villageChoices.FindIndex(choice=>choice.Imported==settings.ImportedVillage && choice.Local==settings.LocalVillage));
         RefreshBackups(database);
     }
+    async Task CreateNewVillage() {
+        RequireStopped();
+        using var created=JsonDocument.Parse(await ReadTool(60,"--db",defaultDatabase,"create-local-village"));
+        var id=created.RootElement.GetProperty("village_id").GetString()!;
+        var settings=Read();
+        settings.LocalVillage=id;settings.ImportedVillage="";settings.VillageChoiceMade=true;Write(settings);
+        SetStage(100,"New village created and selected. Click Play to begin its tutorial.");
+        Log("Created a new independent village ("+id[..8]+") and selected it.");
+    }
+    async Task DeleteSelectedVillage() {
+        RequireStopped();
+        if(villages.SelectedIndex<0||villages.SelectedIndex>=villageChoices.Count)
+            throw new InvalidOperationException("Select a saved village to delete.");
+        var choice=villageChoices[villages.SelectedIndex];
+        if(string.IsNullOrEmpty(choice.Local)&&string.IsNullOrEmpty(choice.Imported))
+            throw new InvalidOperationException("Select a saved village, not the linked-instance option.");
+        if(!ConfirmDelete(choice.Label,out bool backup))return;
+        var folder=Path.Combine(state,"backups");Directory.CreateDirectory(folder);
+        string? backupPath=null;
+        if(backup) {
+            var stem=string.IsNullOrEmpty(choice.Local)?"imported-"+choice.Imported:"village-"+choice.Local;
+            backupPath=Path.Combine(folder,"deleted-"+stem+"-"+DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ")+".vl-save.zip");
+        }
+        SetStage(30,"Deleting the selected village…");
+        var args=new List<string>{"--db",defaultDatabase};
+        if(string.IsNullOrEmpty(choice.Local)) { args.Add("delete-imported-village");args.Add(choice.Imported); }
+        else { args.Add("delete-local-village");args.Add(choice.Local); }
+        if(backupPath!=null) { args.Add("--backup");args.Add(backupPath); }
+        await ToolQuiet(args.ToArray());
+        var settings=Read();bool changed=false;
+        if(choice.Local==settings.LocalVillage) { settings.LocalVillage="";changed=true; }
+        if(choice.Imported==settings.ImportedVillage) { settings.ImportedVillage="";changed=true; }
+        if(changed)Write(settings);
+        SetStage(100,backupPath==null?"Village deleted.":"Village deleted. The recovery copy is in Save Backups.");
+        Log(backupPath==null?"Deleted village: "+choice.Label
+            :"Deleted village: "+choice.Label+". Recovery copy: "+backupPath);
+    }
+    bool ConfirmDelete(string label,out bool backup) {
+        using var dialog=new Form{Text="Delete village",StartPosition=FormStartPosition.CenterParent,
+            FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false,
+            AutoScaleMode=AutoScaleMode.Font,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink};
+        var layout=SetupDialogLayout(520);
+        var backupBox=new CheckBox{Text="Create a recovery backup before deleting",Checked=true,AutoSize=true};
+        var delete=SetupButton("Delete village");
+        var cancel=SetupButton("Cancel",DialogResult.Cancel);
+        delete.Click+=(_,_)=>dialog.DialogResult=DialogResult.OK;
+        layout.Controls.Add(SetupText("Delete “"+label+"”?\n\nThis removes only this village from the launcher. Other villages, backups, and global settings are not changed.",520));
+        layout.Controls.Add(backupBox);
+        layout.Controls.Add(SetupButtons(cancel,delete));
+        dialog.Controls.Add(layout);
+        dialog.AcceptButton=cancel;dialog.CancelButton=cancel;
+        ThemeManager.Apply(dialog);
+        var result=dialog.ShowDialog(this);
+        backup=backupBox.Checked;
+        return result==DialogResult.OK;
+    }
+    async Task RestoreFromBackup() {
+        RequireStopped();
+        using var picker=new OpenFileDialog{Title="Select a deleted-village recovery archive",
+            Filter="Village Life recovery archive (*.zip)|*.zip",CheckFileExists=true,
+            InitialDirectory=Path.Combine(state,"backups")};
+        if(picker.ShowDialog(this)!=DialogResult.OK)return;
+        using var restored=JsonDocument.Parse(await ReadTool(120,"--db",defaultDatabase,"restore-portable",picker.FileName));
+        var id=restored.RootElement.GetProperty("village_id").GetString()!;
+        var settings=Read();
+        settings.LocalVillage=id;settings.ImportedVillage="";settings.VillageChoiceMade=true;Write(settings);
+        SetStage(100,"Recovery archive restored as a new village and selected. Click Play to open it.");
+        Log("Restored a village from a recovery archive ("+id[..8]+").");
+    }
     Task UseSelectedVillage() {
         RequireStopped();
         if(villages.SelectedIndex<0||villages.SelectedIndex>=villageChoices.Count)throw new InvalidOperationException("Select a village from the list first.");
@@ -248,7 +349,10 @@ public sealed partial class VillageLifeWindow {
     void RefreshBackups(string database) {
         backups.Items.Clear();
         var folders=new[]{Path.Combine(state,"backups"),Path.Combine(Path.GetDirectoryName(database)!,"backups")}.Distinct(StringComparer.OrdinalIgnoreCase);
-        var files=folders.Where(Directory.Exists).SelectMany(folder=>Directory.EnumerateFiles(folder,"*.sqlite3")).Select(file=>new FileInfo(file)).OrderByDescending(file=>file.LastWriteTimeUtc).ToArray();
+        var files=folders.Where(Directory.Exists)
+            .SelectMany(folder=>Directory.EnumerateFiles(folder,"*.sqlite3")
+                .Concat(Directory.EnumerateFiles(folder,"*.zip")))
+            .Select(file=>new FileInfo(file)).OrderByDescending(file=>file.LastWriteTimeUtc).ToArray();
         foreach(var file in files.Take(100))backups.Items.Add($"{file.LastWriteTime:g} · {file.Name} · {file.Length/1048576.0:N1} MB");
         backupStatus.Text=files.Length==0?"No recovery backups found yet. Back up now after your village is created.":$"Latest backup file: {files[0].LastWriteTime:g}. {files.Length} recovery {(files.Length==1?"copy":"copies")} found.";
     }

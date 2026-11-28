@@ -28,7 +28,7 @@ public sealed partial class VillageLifeWindow : Form {
     const string ReleaseTitle = "Village Life Community Update " + ReleaseVersion;
     const string DataFolder = "VillageLifeRevivalNext";
 #endif
-    sealed class Settings { public string GameTables { get; set; }=""; public string Xapk { get; set; }=""; public string Inventory { get; set; }=""; public string? Obb { get; set; } public int Port { get; set; }=80; public bool ClientPrepared { get; set; } public bool PreparedFilesReady { get; set; } public bool VillageChoiceMade { get; set; } public string ImportedVillage { get; set; }=""; public string LocalVillage { get; set; }=""; }
+    sealed class Settings { public string GameTables { get; set; }=""; public string Xapk { get; set; }=""; public string Inventory { get; set; }=""; public string? Obb { get; set; } public int Port { get; set; }=80; public bool ClientPrepared { get; set; } public bool PreparedFilesReady { get; set; } public bool VillageChoiceMade { get; set; } public string ImportedVillage { get; set; }=""; public string LocalVillage { get; set; }=""; public string Theme { get; set; }=""; }
     readonly string root=Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName??AppContext.BaseDirectory;
     internal static string DefaultDatabase() {
         var alternate = Environment.GetEnvironmentVariable("VILLAGELIFE_DB");
@@ -184,6 +184,7 @@ public sealed partial class VillageLifeWindow : Form {
         dialog.Controls.Add(layout);
         dialog.AcceptButton=select;
         dialog.CancelButton=cancel;
+        ThemeManager.Apply(dialog);
         return dialog.ShowDialog(this)==DialogResult.OK ? items.SelectedIndex : -1;
     }
 
@@ -251,7 +252,7 @@ public sealed partial class VillageLifeWindow : Form {
         using var list = await ReadVillageList("list-legacy-villages");
         var copies = list.RootElement.EnumerateArray().ToArray();
         using var localList = File.Exists(defaultDatabase)
-            ? await ReadVillageList("--db",defaultDatabase,"list-gem-villages") : null;
+            ? await ReadVillageList("--db",defaultDatabase,"list-local-villages") : null;
         var local = localList?.RootElement.EnumerateArray().ToArray() ?? [];
         var settings = Read();
         var choices = new List<(string Label,string Imported,string Local)> {
@@ -296,7 +297,7 @@ public sealed partial class VillageLifeWindow : Form {
         _=Task.Run(async()=>{
             while(await process.StandardError.ReadLineAsync() is string line) {
                 Log(line);
-                if (IsCode(line,"VL-SERVER-PORT-IN-USE")) startupError.TrySetResult(line);
+                if (line.Contains("[VL-", StringComparison.Ordinal)) startupError.TrySetResult(line.Trim());
             }
             startupError.TrySetResult("");
         });
@@ -354,7 +355,19 @@ public sealed partial class VillageLifeWindow : Form {
         SetStage(100,"BlueStacks can reach the local server.");
     }
     Task OpenData(){Directory.CreateDirectory(state);Process.Start(new ProcessStartInfo(state){UseShellExecute=true});return Task.CompletedTask;}
-    async Task Diagnostics(){SetStage(10,"Diagnostics: collecting guest network evidence…");await Tool("verify-network","--port",Read().Port.ToString());SetStage(75,"Diagnostics: exporting safe missing-request summary…");await Tool("--db",VillageDatabase(Read()),"export-missing-requests");SetStage(100,"Diagnostics complete — open Technical log for the report location.");Log("[VL-NETWORK-UNVERIFIED] Tests collect evidence only; they do not create or certify an isolation policy.");}
+    async Task Diagnostics(){
+        SetStage(10,"Diagnostics: collecting guest network evidence…");
+        await Tool("verify-network","--port",Read().Port.ToString());
+        SetStage(60,"Diagnostics: creating the support report…");
+        var reports=Path.Combine(state,"reports");Directory.CreateDirectory(reports);
+        var report=Path.Combine(reports,"support-"+DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ")+".zip");
+        await Tool("--db",VillageDatabase(Read()),"export-support",report,
+                   "--launcher-version",ReleaseVersion,
+                   "--build-manifest",Path.Combine(root,"BUILD-MANIFEST.json"),
+                   "--adb-check");
+        SetStage(100,"Diagnostics complete — open Technical log for the report location.");
+        Log("[VL-NETWORK-UNVERIFIED] Tests collect evidence only; they do not create or certify an isolation policy.");
+    }
     Task Help() {
         MessageBox.Show(this,"Click Play to open your village or resume setup. First-time setup uses a dedicated BlueStacks 5 Pie 64-bit instance.\n\nUse Import 0.2.6 Save to copy an older village. Choose Village switches between saved villages.\n\nUse Advanced diagnostics to report gameplay issues.","Village Life Help");
         return Task.CompletedTask;

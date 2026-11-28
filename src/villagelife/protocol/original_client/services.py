@@ -160,6 +160,18 @@ class OriginalClientGame:
         existing_save=snapshot.payload.get('originalSave')
         existing_world=existing_save.get('normal') if isinstance(existing_save,dict) else None
         if isinstance(existing_world,dict):
+            # Compact legacy inventory snapshots once, before any other login
+            # mutation archives the receipts. New receipts are already written
+            # without snapshots; replay rebuilds them from current inventory.
+            # A fixed operation key makes later logins skip the cold scan.
+            def compact_consumption_history(payload):
+                normal=payload['originalSave']['normal']
+                return {'consumptionSnapshotsRemoved':
+                        self.wants.compact_consumption_history(normal)}
+            self.repo.mutate(ident.village_id,
+                operation_key='original:migrate:consumption-history-v1',
+                request={'action':'drop-reconstructable-consumption-inventory-snapshots','version':1},
+                change=compact_consumption_history)
             def reconcile(payload):
                 save=payload.get('originalSave')
                 normal=save.get('normal') if isinstance(save,dict) else None
@@ -205,7 +217,6 @@ class OriginalClientGame:
                 request={'action':'restore-proven-charm-and-recorded-birth-ranks'}, change=restore_skills)
             def on_login(payload):
                 normal = payload['originalSave']['normal']
-                self.wants.compact_consumption_history(normal)
                 self.materials.restore_starter_tools(normal)
                 self.wants.clear_ineligible_shelter_wants(normal, int(time.time()))
                 self.quests.reconcile_travel(normal, int(time.time()))

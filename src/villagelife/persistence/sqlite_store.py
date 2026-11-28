@@ -18,7 +18,7 @@ import threading
 from .history import History, COLLECTIONS, json_default
 
 from villagelife.core.errors import (
-    DuplicateActionConflict, InvalidAction, NotFound, RevisionConflict,
+    DuplicateActionConflict, InvalidAction, NotFound, RevisionConflict, SaveSchemaError,
 )
 from villagelife.core.model import VillageSnapshot
 
@@ -133,7 +133,11 @@ class SqliteSaveRepository:
                           FROM original_call_outcomes''')
             row = db.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()
             if row and row['value'] not in {'1', '2'}:
-                raise RuntimeError('Unsupported database schema version: '+row['value'])
+                raise SaveSchemaError(
+                    'This save database uses schema version '+row['value']+', which this '
+                    'server cannot read. Open it with the launcher that created it, or '
+                    'restore a backup made before the upgrade. Do not open an upgraded '
+                    'save with an older server.')
             db.execute("INSERT OR IGNORE INTO metadata VALUES ('schema_version','1')")
             self.history_enabled = db.execute("SELECT 1 FROM metadata WHERE key='history_storage_v1'").fetchone() is not None
             if not db.execute("SELECT 1 FROM metadata WHERE key='due_index_v1'").fetchone():
@@ -253,6 +257,38 @@ class SqliteSaveRepository:
                         dumps(payload), now, now))
             self._sync_due(db, identifier, payload, format)
         return identifier
+
+    def delete_village(self, village_id: str) -> dict:
+        """Remove one village and its private rows without touching others.
+
+        A recovery copy must be created by the caller before this runs; this
+        method only performs the irreversible database cleanup.
+        """
+        with self.transaction() as db:
+            row = db.execute('SELECT owner_id FROM villages WHERE village_id=?',
+                             (village_id,)).fetchone()
+            if row is None:
+                raise NotFound(f'Unknown village: {village_id}')
+            owner = row['owner_id']
+            db.execute('DELETE FROM action_history WHERE village_id=?', (village_id,))
+            db.execute('DELETE FROM history_collections WHERE village_id=?', (village_id,))
+            db.execute('DELETE FROM due_jobs WHERE village_id=?', (village_id,))
+            db.execute('DELETE FROM receipts WHERE village_id=?', (village_id,))
+            db.execute('DELETE FROM legacy_imports WHERE village_id=?', (village_id,))
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                          "AND name='original_client_devices'").fetchone():
+                db.execute('DELETE FROM original_client_devices WHERE village_id=?',
+                           (village_id,))
+            db.execute('DELETE FROM villages WHERE village_id=?', (village_id,))
+            still_used = (db.execute('SELECT 1 FROM villages WHERE owner_id=?',
+                                     (owner,)).fetchone()
+                          or db.execute('SELECT 1 FROM legacy_imports WHERE account_id=?',
+                                        (owner,)).fetchone()
+                          or db.execute('SELECT 1 FROM friendships WHERE left_account=? '
+                                        'OR right_account=?', (owner, owner)).fetchone())
+            if not still_used:
+                db.execute('DELETE FROM accounts WHERE account_id=?', (owner,))
+        return {'village_id': village_id, 'account_id': owner}
 
     def _payload(self, row):
         started = time.perf_counter()

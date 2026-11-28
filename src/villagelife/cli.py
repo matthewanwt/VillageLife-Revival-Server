@@ -4,11 +4,12 @@ import argparse
 import errno
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import uuid
 from pathlib import Path
-from villagelife.core.errors import InvalidAction
+from villagelife.core.errors import InvalidAction, SaveBackupError, SaveSchemaError
 from villagelife.core.model import empty_native_village
 from villagelife.persistence.sqlite_store import SqliteSaveRepository
 from villagelife.persistence.auth_store import AccountTokens
@@ -46,6 +47,11 @@ def main(argv: list[str] | None = None) -> int:
         help='Write a consistent compacted copy; never replaces the active database')
     a = sub.add_parser('add-local-gems'); a.add_argument('amount', type=int); a.add_argument('--village-id')
     sub.add_parser('list-gem-villages')
+    sub.add_parser('list-local-villages')
+    sub.add_parser('create-local-village')
+    a = sub.add_parser('delete-local-village'); a.add_argument('village_id'); a.add_argument('--backup', type=Path)
+    a = sub.add_parser('delete-imported-village'); a.add_argument('key'); a.add_argument('--backup', type=Path); a.add_argument('--storage', type=Path)
+    a = sub.add_parser('restore-portable'); a.add_argument('archive', type=Path)
     a = sub.add_parser('serve'); a.add_argument('--port', type=int, default=8765)
     a.add_argument('--launcher-stdin', action='store_true', help=argparse.SUPPRESS)
     a.add_argument('--local-village-id', help='Open the explicitly selected local village for this server run')
@@ -71,6 +77,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser('network-report')
     a = sub.add_parser('verify-network'); a.add_argument('--port', type=int, choices=range(1, 65536), metavar='PORT')
     a = sub.add_parser('export-support'); a.add_argument('output', type=Path)
+    a.add_argument('--launcher-version', default='')
+    a.add_argument('--build-manifest', type=Path)
+    a.add_argument('--adb-check', action='store_true')
     a = sub.add_parser('install-prepared-client'); a.add_argument('--apk', type=Path, required=True); a.add_argument('--obb', type=Path, required=True); a.add_argument('--replace', action='store_true')
     a = sub.add_parser('repair-prepared-obb'); a.add_argument('--apk', type=Path, required=True); a.add_argument('--obb', type=Path, required=True)
     a = sub.add_parser('check-original-game'); a.add_argument('--prepared', action='store_true')
@@ -152,7 +161,19 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report(binding, guest_checks=True, local_port=args.port), indent=2)); return 0
     if args.command == 'export-support':
         from villagelife.support import export_support
-        print('Created:', export_support(args.output, binding)); return 0
+        report_repo = None
+        database_note = ''
+        if args.db.is_file():
+            try:
+                report_repo = SqliteSaveRepository(args.db)
+            except SaveSchemaError as exc:
+                database_note = str(exc)
+            except OSError:
+                database_note = 'The save database could not be opened.'
+        print('Created:', export_support(args.output, binding,
+            launcher_version=args.launcher_version, manifest=args.build_manifest,
+            repo=report_repo, database_note=database_note, adb_check=args.adb_check))
+        return 0
     if args.command == 'install-prepared-client':
         from villagelife.platforms.original_client import install_prepared
         install_prepared(binding, args.apk, args.obb, replace=args.replace); print('Prepared client installed in the explicitly bound instance'); return 0
@@ -200,6 +221,24 @@ def main(argv: list[str] | None = None) -> int:
             sys.argv = saved
         return 0
     repo = SqliteSaveRepository(args.db)
+    if args.command == 'list-local-villages':
+        from villagelife.protocol.original_client.villages import list_local_villages
+        print(json.dumps(list_local_villages(repo))); return 0
+    if args.command == 'create-local-village':
+        from villagelife.protocol.original_client.villages import create_local_village
+        print(json.dumps(create_local_village(repo))); return 0
+    if args.command == 'delete-local-village':
+        from villagelife.protocol.original_client.villages import delete_local_village
+        print(json.dumps(delete_local_village(repo, args.village_id,
+                                              backup=args.backup))); return 0
+    if args.command == 'delete-imported-village':
+        from villagelife.protocol.original_client.villages import delete_imported_village
+        print(json.dumps(delete_imported_village(repo, args.key,
+                                                 storage=args.storage,
+                                                 backup=args.backup))); return 0
+    if args.command == 'restore-portable':
+        from villagelife.protocol.original_client.villages import restore_portable_village
+        print(json.dumps(restore_portable_village(repo, args.archive))); return 0
     if args.command == 'export-missing-requests':
         from villagelife.support import export_missing
         print('Created:', export_missing(repo, current_run_only=True)); return 0
@@ -228,15 +267,21 @@ def main(argv: list[str] | None = None) -> int:
         print('New village:', PortableSaves(repo).import_as_new(args.archive, args.owner_id))
     elif args.command in {'backup-db', 'compact-db'}:
         if args.output.exists():
-            parser.error('Backup already exists; refusing to overwrite')
-        repo.backup_to(args.output)
+            raise SaveBackupError('A recovery copy already exists at that path. '
+                                  'Choose another name or keep the existing copy.')
+        try:
+            repo.backup_to(args.output)
+        except (OSError, sqlite3.Error) as exc:
+            raise SaveBackupError(
+                'Could not create the recovery copy. Free disk space and check folder '
+                'permissions, then retry. Your active save was not changed.') from exc
         if args.command == 'compact-db':
-            import sqlite3
             from contextlib import closing
             with closing(sqlite3.connect(args.output)) as db:
                 db.execute('VACUUM')
                 if db.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
-                    raise ValueError('Compacted copy did not pass integrity verification')
+                    raise SaveBackupError('The compacted copy did not pass integrity '
+                                          'verification. Keep the original save and retry.')
         print('Verified copy written:', args.output)
     elif args.command in {'list-gem-villages', 'add-local-gems'}:
         with repo.connect() as db:
@@ -287,7 +332,13 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError('Prepared client capability is invalid. Run setup again.')
         if args.game_tables and not transport_key:
             raise ValueError('Prepared client capability is missing. Run setup with this launcher before playing.')
-        repo.enable_history_storage()
+        try:
+            repo.enable_history_storage()
+        except (OSError, sqlite3.Error) as exc:
+            raise SaveBackupError(
+                'Could not create the one-time recovery copy before upgrading this save. '
+                'Free disk space and check folder permissions, then click Play again. '
+                'The existing save was not changed.') from exc
         original = assets = None
         if args.game_tables:
             from villagelife.protocol.original_client.catalog import OriginalDefinitions
@@ -314,6 +365,12 @@ def run(argv: list[str] | None = None) -> int:
     # raw player data when a Windows user triggers a diagnostic failure.
     try:
         return main(argv)
+    except SaveSchemaError as exc:
+        print('[VL-SAVE-SCHEMA-UNSUPPORTED] '+str(exc)[:500], file=sys.stderr)
+        return 3
+    except SaveBackupError as exc:
+        print('[VL-SAVE-BACKUP-FAILED] '+str(exc)[:500], file=sys.stderr)
+        return 3
     except bs.InstanceError as exc:
         print(str(exc), file=__import__('sys').stderr)
         return 2

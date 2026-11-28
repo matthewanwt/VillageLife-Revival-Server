@@ -80,6 +80,7 @@ public sealed partial class VillageLifeWindow {
             timer.Start();
         };
         try {
+            ThemeManager.Apply(guide);
             var result=guide.ShowDialog(this);
             timer.Stop();
             await pending;

@@ -5,8 +5,15 @@ using System.Windows.Forms;
 namespace VillageLife;
 
 public sealed partial class VillageLifeWindow {
-    static string LocalVillageLabel(JsonElement row) =>
-        $"{row.GetProperty("name").GetString()} (level {row.GetProperty("level").GetInt32()}, {row.GetProperty("gems").GetDecimal():N0} gems) · saved {DateTimeOffset.FromUnixTimeSeconds(row.GetProperty("last_saved").GetInt64()).ToLocalTime():g}";
+    static string LocalVillageLabel(JsonElement row) {
+        var name=row.GetProperty("name").GetString()??"Village";
+        var saved=DateTimeOffset.FromUnixTimeSeconds(row.GetProperty("last_saved").GetInt64()).ToLocalTime();
+        if(row.TryGetProperty("stage",out var stage)&&stage.GetString()=="tutorial")
+            return $"{name} · tutorial not started · saved {saved:g}";
+        var gems=row.TryGetProperty("gems",out var value)&&value.ValueKind==JsonValueKind.Number
+            ? $", {value.GetDecimal():N0} gems" : "";
+        return $"{name} (level {row.GetProperty("level").GetInt32()}{gems}) · saved {saved:g}";
+    }
 
     async Task AddGems() {
         var settings=Read();
@@ -57,6 +64,7 @@ public sealed partial class VillageLifeWindow {
         dialog.CancelButton=cancel;
         dialog.ActiveControl=amount;
         amount.Select(0,amount.Text.Length);
+        ThemeManager.Apply(dialog);
         if (dialog.ShowDialog(this)!=DialogResult.OK) return;
         bool restart=backend is {HasExited:false};
         SetStage(25,"Adding gems to your selected village…");

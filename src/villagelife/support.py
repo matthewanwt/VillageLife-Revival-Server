@@ -12,6 +12,7 @@ import zipfile
 import logging
 from contextvars import ContextVar
 from contextlib import contextmanager
+from villagelife import __version__
 from villagelife.persistence.sqlite_store import SqliteSaveRepository
 
 _batch = ContextVar('diagnostic_batch', default=None)
@@ -122,12 +123,12 @@ def _response_shape(value, depth: int = 0) -> str:
             if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,80}', name):
                 name = 'other'
             fields.append(name + ':' + _response_shape(value[key], depth + 1))
-        return 'object{' + ','.join(fields) + ('ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦' if len(value) > 32 else '') + '}'
+        return 'object{' + ','.join(fields) + ('...' if len(value) > 32 else '') + '}'
     if isinstance(value, list):
         if not value:
             return 'array'
         forms = sorted({_response_shape(item, depth + 1) for item in value[:4]})
-        return 'array<' + '|'.join(forms[:4]) + ('|ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦' if len(forms) > 4 else '') + '>'
+        return 'array<' + '|'.join(forms[:4]) + ('|...' if len(forms) > 4 else '') + '>'
     if value is None:
         return 'null'
     if isinstance(value, bool):
@@ -335,14 +336,7 @@ def record_original_call(repo: SqliteSaveRepository, service: str, status: int,
                        (shape,))
 
 
-def export_missing(repo: SqliteSaveRepository, target: Path | None = None,
-                   *, current_run_only: bool = False) -> Path:
-    if target is None:
-        target = repo.path.parent / 'reports' / ('missing-requests-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '.zip')
-    target = Path(target).resolve()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        raise FileExistsError(target)
+def _missing_data(repo: SqliteSaveRepository, *, current_run_only: bool = False) -> dict:
     with repo.connect() as db:
         db.execute('BEGIN')
         timings = [dict(row) for row in db.execute('SELECT phase,count,total_ms,max_ms FROM request_timings '
@@ -369,23 +363,73 @@ def export_missing(repo: SqliteSaveRepository, target: Path | None = None,
             calls = [dict(r) for r in db.execute('SELECT service_shape, response_code, request_shape, response_shape, count, last_seen FROM original_call_request_outcomes ORDER BY last_seen DESC, count DESC LIMIT 2000')]
             scope = 'legacy_history'
             note = 'Counts are cumulative across runs.'
-    data = {'format': 'VillageLifeMissingRequestsV1', 'contains_saves': False, 'scope': scope,
+    return {'format': 'VillageLifeMissingRequestsV1', 'contains_saves': False, 'scope': scope,
             'performance_timings': timings,
             'note': (note + ' last_seen is UTC Unix time. Aggregated RPC request/response keys and JSON types; startup/area responses also include entity-type counts, material-source template-ID counts, and shelter bed layout counts. Wish outcomes include aggregate pending and cleared counts. No raw request/response values, entity IDs, call IDs, session tokens, save contents or player identifiers.'),
             'records': rows, 'call_outcomes': calls}
+
+
+def export_missing(repo: SqliteSaveRepository, target: Path | None = None,
+                   *, current_run_only: bool = False) -> Path:
+    if target is None:
+        target = repo.path.parent / 'reports' / ('missing-requests-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '.zip')
+    target = Path(target).resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        raise FileExistsError(target)
+    data = _missing_data(repo, current_run_only=current_run_only)
     with zipfile.ZipFile(target, 'x', compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr('missing-requests.json', json.dumps(data, indent=2))
     return target
 
 
-def export_support(target: Path, binding: Path) -> Path:
+def _build_provenance(manifest: Path | None) -> dict:
+    if manifest is None:
+        return {'available': False, 'reason': 'not supplied'}
+    try:
+        data = json.loads(Path(manifest).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {'available': False, 'reason': 'unreadable'}
+    if not isinstance(data, dict):
+        return {'available': False, 'reason': 'invalid'}
+    validation = data.get('validation') if isinstance(data.get('validation'), dict) else {}
+    return {'available': True, 'format': data.get('format'),
+            'revision': validation.get('revision'),
+            'source_sha256': data.get('source_sha256'),
+            'validation_passed': validation.get('passed'),
+            'dirty_source': validation.get('dirty_source'),
+            'authenticode_signed': data.get('authenticode_signed')}
+
+
+def _adb_summary(binding: Path, enabled: bool) -> dict:
+    if not enabled or not binding.is_file():
+        return {}
+    try:
+        from villagelife.platforms import bluestacks
+        status = bluestacks.adb_status(binding, once=True)
+        return {'status': status.get('status'), 'connected': status.get('connected'),
+                'instance': status.get('instance'), 'name': status.get('name'),
+                'adb_port': status.get('adb_port')}
+    except Exception as exc:
+        return {'status': 'unavailable',
+                'error_code': getattr(exc, 'code', None) or type(exc).__name__}
+
+
+def export_support(target: Path, binding: Path, *, launcher_version: str = '',
+                   manifest: Path | None = None, repo: SqliteSaveRepository | None = None,
+                   database_note: str = '', adb_check: bool = False) -> Path:
     target = Path(target).resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         raise FileExistsError(target)
-    receipt = {'format': 'VillageLifeSupportV1', 'has_instance_binding': binding.is_file(),
-               'os_family': os.name, 'no_save_contents': True,
+    binding = Path(binding)
+    receipt = {'format': 'VillageLifeSupportV1', 'server_version': __version__,
+               'launcher_version': launcher_version or 'unknown',
+               'has_instance_binding': binding.is_file(), 'os_family': os.name,
+               'no_save_contents': True, 'build': _build_provenance(manifest),
                'warning': 'Read report before sending. A network policy has NOT been verified.'}
+    if database_note:
+        receipt['database_note'] = database_note
     if binding.is_file():
         try:
             data = json.loads(binding.read_text(encoding='utf-8'))
@@ -394,6 +438,17 @@ def export_support(target: Path, binding: Path) -> Path:
             receipt['name_changed_hint'] = 'Compare against BlueStacks Manager if setup fails.'
         except (ValueError, OSError):
             receipt['binding_error'] = 'unreadable'
+    adb = _adb_summary(binding, adb_check)
+    if adb:
+        receipt['adb'] = adb
+    missing = None
+    if repo is not None:
+        try:
+            missing = _missing_data(repo, current_run_only=True)
+        except Exception:
+            receipt['missing_requests_error'] = 'unavailable'
     with zipfile.ZipFile(target, 'x', compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr('diagnostics.json', json.dumps(receipt, indent=2))
+        if missing is not None:
+            z.writestr('missing-requests.json', json.dumps(missing, indent=2))
     return target

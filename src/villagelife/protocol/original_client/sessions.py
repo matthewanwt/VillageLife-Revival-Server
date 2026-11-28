@@ -48,7 +48,7 @@ class OriginalClientSessions:
                 self.selected_owner = db.execute('''
                     SELECT d.account_id, d.village_id, d.numeric_player_id
                     FROM original_client_devices d JOIN villages v USING (village_id)
-                    WHERE d.village_id=? AND json_type(v.payload_json, '$.originalSave.normal')='object'
+                    WHERE d.village_id=? AND json_type(v.payload_json, '$.originalSave') IN ('object','null')
                     ORDER BY d.updated_at DESC LIMIT 1
                     ''', (selected_village,)).fetchone()
                 if self.selected_owner is None:
