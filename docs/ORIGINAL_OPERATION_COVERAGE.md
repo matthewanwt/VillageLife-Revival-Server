@@ -18,7 +18,7 @@ The supplied `missing-requests (3).json` contains 27 distinct RPC names. All 27 
 The observed calls are accounted for by `OPTIONAL_EMPTY`, `NORMAL_READ`, the tutorial handler, achievement response, or explicit mutation branches in `original_client/services.py`. This is the current in-capture audit:
 
 - Analytics and optional content: `ClientAnalyticsService/Event`, `Install`, `Tutorial`, `Visit`; `ClientAdvertisement/PuppetShow`; `ClientData/GetBannerData`, `GetEmbedVideoData`, `GetGemSaleData`.
-- Achievement: `ClientAchievement/GetUserAchievements`.
+- Achievement: `ClientAchievement/GetUserAchievements`, `GetUnReceievedUserGameAchievements`, `MarkAchievementAsViewed`, `CollectUserGameAchievementReward` (progress reconstructed from durable save state; achievements whose original counters depended on unrecorded event history stay at zero).
 - Tutorial/session/settings: `ClientUserHashService/GetUserHash`, `SetActiveSequence`, `SetVillagerName`; `ClientSettingService/GetUserGameSettings`, `SaveGameSetting`; `ClientUserShelterService/ResetHappinessTimer`.
 - Startup and world: `ClientStartupService/GetStartupInfo`, `GetAreaContent`; `ClientUserService/ProgressArea`.
 - Village reads: `ClientMaterialService/GetUserMaterialTypes`; `ClientQuestService/GetQuests`; `ClientUserBundleService/GetUserBundles`; `ClientUserService/GetUserPayments`, `GetUserNotifications`; `ClientVillagerService/GetUserGachaVillagers`; `ClientWant/AllWants`; `ClientRequestService/GetPaginatedSentRequests`, `GetPaginatedReceivedRequests`.
@@ -99,6 +99,9 @@ The full legacy list below still contains operations that have not been dispatch
 ## Other routed operations (require client-side regression verification)
 
 - `ClientAchievement/GetUserAchievements`
+- `ClientAchievement/GetUnReceievedUserGameAchievements`
+- `ClientAchievement/MarkAchievementAsViewed`
+- `ClientAchievement/CollectUserGameAchievementReward`
 - `ClientBuildingService/GetUserBuildingTasks`
 - `ClientAdvertisement/PuppetShow`
 - `ClientAdvertisement/SyncVideoWatchedCount`

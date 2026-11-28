@@ -287,6 +287,9 @@ def _failure_category(service: str, message: str | None) -> str:
         'shelter_bed_occupied': ('bed is occupied',),
         'shelter_wrong_area': ('shelter is in another area',),
         'shelter_without_occupants': ('shelter has no occupants',),
+        'achievement_id_missing': ('achievement identifier required',),
+        'achievement_id_not_numeric': ('achievement identifier is not numeric',),
+        'achievement_id_unknown': ('unknown achievement in this village',),
     }
     for category, phrases in groups.items():
         if any(phrase in text for phrase in phrases):

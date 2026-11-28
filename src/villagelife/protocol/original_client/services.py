@@ -38,6 +38,7 @@ from .timers import gem_price
 from .life_stages import ACK_MESSAGE, ACK_NOTICE, CHOOSE_SKILL, OriginalLifeStages
 from .charms import RECRUIT, OriginalBabyCharmRules, SERVICES as BABY_CHARM_SERVICES
 from .marriage import OriginalMarriageRules, READS as MARRIAGE_READS, SERVICES as MARRIAGE_SERVICES
+from .achievements import OriginalAchievementRules, SERVICES as ACHIEVEMENT_SERVICES
 from .relationships import OriginalDatingRules, SERVICES as DATING_SERVICES
 from .learning import OriginalLearningRules, SERVICES as LEARNING_SERVICES
 from villagelife.support import record_missing, record_original_call, batch_diagnostics
@@ -143,6 +144,7 @@ class OriginalClientGame:
         self.baby_charms=OriginalBabyCharmRules(self.family,self.economy)
         self.habitats=self.buildings.habitats
         self.fun=OriginalFunRules(definitions,self.materials)
+        self.achievements=OriginalAchievementRules(definitions)
 
     def login(self, request:dict)->dict:
         try:
@@ -184,6 +186,7 @@ class OriginalClientGame:
                         changed=self.habitats.migrate(normal,at) or changed
                         changed=self.fun.migrate(normal) or changed
                         changed=self.habitats.sync(normal,at) or changed
+                        self.achievements.observe(normal,at)
                 return {'authoredObjectsRestored':changed}
             self.repo.mutate(ident.village_id,
                 operation_key='original:migrate:habitats-v5',
@@ -296,9 +299,7 @@ class OriginalClientGame:
                 code=400;message='Invalid service or request body'
             elif service in OPTIONAL_EMPTY:
                 response={}
-            elif service=='ClientAchievement/GetUserAchievements':
-                response={'result':[]}
-            elif service not in TUTORIAL_SERVICES|NORMAL_READ|ECONOMY_SERVICES|LEARNING_SERVICES|BUILDING_SERVICES|QUEST_SERVICES|USER_BUNDLE_SERVICES|PROGRESSION_SERVICES|WANT_SERVICES|DATING_SERVICES|MARRIAGE_SERVICES|FAMILY_SERVICES|BABY_CHARM_SERVICES|HABITAT_SERVICES|FUN_SERVICES|SKILL_SERVICES|{CHOOSE_SKILL, INTERACTIVE_SERVICE, COLLECT, RECRUIT, 'ClientStartupService/ProcessOfflineConsumption', 'ClientUserService/ProgressArea', 'ClientUserService/UnlockArea', 'ClientVillagerService/MoveVillagers', 'ClientVillagerService/SetName', 'ClientTaskService/StartGatheringTask', 'ClientTaskService/StartCraftingTask', 'ClientTaskService/StartBuildingTask', 'ClientTaskService/StartFarmingTask', 'ClientTaskService/StartFishingTask', 'ClientTaskService/StartHuntingTask', 'ClientTaskService/HarvestTask', 'ClientTaskService/InstantCompleteTaskCurve', 'ClientVillager/Consume', 'ClientVillager/ReleaseXp'}:
+            elif service not in TUTORIAL_SERVICES|NORMAL_READ|ECONOMY_SERVICES|LEARNING_SERVICES|BUILDING_SERVICES|QUEST_SERVICES|USER_BUNDLE_SERVICES|PROGRESSION_SERVICES|WANT_SERVICES|DATING_SERVICES|MARRIAGE_SERVICES|FAMILY_SERVICES|BABY_CHARM_SERVICES|HABITAT_SERVICES|FUN_SERVICES|SKILL_SERVICES|ACHIEVEMENT_SERVICES|{CHOOSE_SKILL, INTERACTIVE_SERVICE, COLLECT, RECRUIT, 'ClientStartupService/ProcessOfflineConsumption', 'ClientUserService/ProgressArea', 'ClientUserService/UnlockArea', 'ClientVillagerService/MoveVillagers', 'ClientVillagerService/SetName', 'ClientTaskService/StartGatheringTask', 'ClientTaskService/StartCraftingTask', 'ClientTaskService/StartBuildingTask', 'ClientTaskService/StartFarmingTask', 'ClientTaskService/StartFishingTask', 'ClientTaskService/StartHuntingTask', 'ClientTaskService/HarvestTask', 'ClientTaskService/InstantCompleteTaskCurve', 'ClientVillager/Consume', 'ClientVillager/ReleaseXp'}:
                 code=501;message='Original gameplay rule not implemented: '+service
             else:
                 try:
@@ -660,12 +661,24 @@ class OriginalClientGame:
                 normal=save.get('normal')
                 if not normal:raise ValueError('Normal world required for want generation')
                 result=self.wants.generate(normal,service,int(time.time()))
+            elif service in ACHIEVEMENT_SERVICES:
+                normal=save.get('normal')
+                if not normal:
+                    if service in {'ClientAchievement/GetUserAchievements',
+                                   'ClientAchievement/GetUnReceievedUserGameAchievements'}:
+                        result={'result':[]}
+                    else:
+                        raise ValueError('Normal world required for achievements')
+                else:
+                    result=self.achievements.operate(normal,service,data,now,self.materials)
             else:
                 result,_=self.tutorial.run(save,service,data)
                 if service=='ClientSettingService/SaveGameSetting' and data.get('key') in {'activeSequence','activeSequenceId','isFtueComplete'}:
                     self.progression.sync_script_assignments(save)
                     if normal:
                         self.materials.restore_starter_tools(normal)
+            if isinstance(normal, dict) and service not in ACHIEVEMENT_SERVICES:
+                self.achievements.observe(normal, now)
             return result
         request = {'service': service, 'data': data}
         if pending is not None:

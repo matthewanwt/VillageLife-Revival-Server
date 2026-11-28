@@ -39,18 +39,27 @@ if ($outputPath.StartsWith($repo+[System.IO.Path]::DirectorySeparatorChar,[Syste
 }
 if (Test-Path -LiteralPath $outputPath) { throw "Refusing to overwrite existing handoff output: $outputPath" }
 $null = Get-Command dotnet -ErrorAction Stop
-& $PythonPath -m PyInstaller --version
-if ($LASTEXITCODE -ne 0) { throw 'Install PyInstaller in .venv: .\.venv\Scripts\python.exe -m pip install pyinstaller' }
+# PyInstaller logs INFO lines on stderr; PowerShell 5.1 treats native stderr as a
+# terminating error under 'Stop'. Scope the relaxation to these calls only.
+$nativePreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+& $PythonPath -m PyInstaller --version 2>&1
+$pyVersionExit = $LASTEXITCODE
+$ErrorActionPreference = $nativePreference
+if ($pyVersionExit -ne 0) { throw 'Install PyInstaller in .venv: .\.venv\Scripts\python.exe -m pip install pyinstaller' }
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 $backendDist = Join-Path $stage 'bin'
 $pyWork = Join-Path $stage 'pyinstaller-work'
 $spec = Join-Path $stage 'spec'
+$ErrorActionPreference = 'Continue'
 & $PythonPath -m PyInstaller --noconfirm --clean --onedir --console --name VillageLifeServer `
     --paths (Join-Path $repo 'src') --collect-submodules villagelife `
     --add-data ((Join-Path $repo 'tools/prepare_original_client.py')+';tools') `
     --distpath $backendDist --workpath $pyWork --specpath $spec `
-    (Join-Path $repo 'windows/installer/new_backend_entry.py')
-if ($LASTEXITCODE -ne 0) { throw 'New Python backend bundling failed' }
+    (Join-Path $repo 'windows/installer/new_backend_entry.py') 2>&1
+$pyBuildExit = $LASTEXITCODE
+$ErrorActionPreference = $nativePreference
+if ($pyBuildExit -ne 0) { throw 'New Python backend bundling failed' }
 if (-not (Test-Path -LiteralPath (Join-Path $backendDist 'VillageLifeServer/VillageLifeServer.exe'))) {
     throw 'NEW backend executable is missing from the build output'
 }

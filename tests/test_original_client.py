@@ -42,7 +42,7 @@ def fake_tables(db:Path):
             'decor_item':[{'id':'7','isScenery':'0','multiPlacement':'1',
                            'requirement_set':'12','price_coins':'60','price_gems':'0',
                            'material_type':'700'}],
-            'material_type':[{'id':ident} for ident in ('130','231','323','325','700')] + [
+            'material_type':[{'id':ident} for ident in ('130','231','232','323','325','700','1536')] + [
                 {'id':ident, 'learnDurationSec':'60', 'unlockLevel':'2',
                  'parentID':parent, 'area':'1', 'seasonal':'0'}
                 for ident,parent in (('178','-1'), ('179','178'))
@@ -59,6 +59,36 @@ def fake_tables(db:Path):
                       }.items())],
             'requirement_set_item':[{'id':'1','requirementSet':'12',
                                      'materialType':'130','quantity':'1'}],
+            'gameAchievements':[
+                {'id':'1','live':'1','itemQuantity1':'5','itemQuantity2':'20',
+                 'itemQuantity3':'50','gemReward1':'2','gemReward2':'5','gemReward3':'9'},
+                {'id':'2','live':'1','itemQuantity1':'1','itemQuantity2':'15',
+                 'itemQuantity3':'50','gemReward1':'2','gemReward2':'5','gemReward3':'10'},
+                {'id':'3','live':'1','itemQuantity1':'12','itemQuantity2':'20',
+                 'itemQuantity3':'35','gemReward1':'5','gemReward2':'10','gemReward3':'20'},
+                {'id':'4','live':'1','itemQuantity1':'5','itemQuantity2':'15',
+                 'itemQuantity3':'35','gemReward1':'2','gemReward2':'4','gemReward3':'5'},
+                {'id':'5','live':'1','itemQuantity1':'1','itemQuantity2':'5',
+                 'itemQuantity3':'10','gemReward1':'2','gemReward2':'5','gemReward3':'10'},
+                {'id':'13','live':'1','itemQuantity1':'25','itemQuantity2':'100',
+                 'itemQuantity3':'250','gemReward1':'2','gemReward2':'5','gemReward3':'9'},
+                {'id':'15','live':'1','itemQuantity1':'2','itemQuantity2':'10',
+                 'itemQuantity3':'25','gemReward1':'2','gemReward2':'4','gemReward3':'7'},
+                {'id':'16','live':'1','itemQuantity1':'2','itemQuantity2':'10',
+                 'itemQuantity3':'20','gemReward1':'2','gemReward2':'4','gemReward3':'7'},
+                {'id':'23','live':'1','itemQuantity1':'5','itemQuantity2':'10',
+                 'itemQuantity3':'20','gemReward1':'2','gemReward2':'4','gemReward3':'7'},
+                {'id':'24','live':'1','itemQuantity1':'25','itemQuantity2':'75',
+                 'itemQuantity3':'200','gemReward1':'2','gemReward2':'4','gemReward3':'7'},
+                {'id':'26','live':'1','itemQuantity1':'2','itemQuantity2':'3',
+                 'itemQuantity3':'5','gemReward1':'2','gemReward2':'3','gemReward3':'5'},
+                {'id':'33','live':'1','itemQuantity1':'10','itemQuantity2':'50',
+                 'itemQuantity3':'100','gemReward1':'10','gemReward2':'15','gemReward3':'20'},
+                {'id':'35','live':'1','itemQuantity1':'1','itemQuantity2':'1',
+                 'itemQuantity3':'1','gemReward1':'2','gemReward2':'3','gemReward3':'4'},
+                {'id':'11','live':'0','itemQuantity1':'0','itemQuantity2':'0',
+                 'itemQuantity3':'0','gemReward1':'0','gemReward2':'0','gemReward3':'0'},
+            ],
         }
         for i,(name, rows) in enumerate(tables.items(),1):
             con.execute('INSERT INTO game_tables VALUES (?,?,?,?,?)',(i,0,name,len(rows),len(rows)))
